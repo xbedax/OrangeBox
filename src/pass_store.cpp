@@ -88,6 +88,7 @@ uint32_t PinStorage::addPin(const CacheRecord& rec) {
     pinRec.validFrom = rec.validFrom;
     pinRec.validTo = rec.validTo;
     pinRec.remaining = rec.remaining;
+    pinRec.doorNum = rec.doorNum;
     uint32_t newId = writePin(pinRec);
     if (newId == 0) {
         Serial.println("[PinStore] addPin: failed to write new pin");
@@ -209,7 +210,7 @@ bool PinStorage::update(const CacheRecord& cacheRec) {
     pinRec.validFrom = cacheRec.validFrom;
     pinRec.validTo = cacheRec.validTo;
     pinRec.remaining = cacheRec.remaining;
-    pinRec.doorNum = 1;                                 //### upravit až bude číslo dveří v UI
+    pinRec.doorNum = cacheRec.doorNum;                                 //### upravit až bude číslo dveří v UI
 
     if (!writePin(pinRec)) {
         Serial.printf("[PinStore] update: write failed for pinId=%u\n", pinRec.pinId);

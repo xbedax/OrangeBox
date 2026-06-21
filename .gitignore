@@ -22,6 +22,9 @@ test/
 .DS_Store
 Thumbs.db
 
+#my junk
+PROPOSAL.md
+
 # Logs and temp files
 *.log
 *.tmp

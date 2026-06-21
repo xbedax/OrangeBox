@@ -16,6 +16,16 @@
 #define CAM_ESP
 
 /*-----------------*/
+/* Door mappings */
+/*-----------------*/
+
+#define INITIAL_DOOR_MAPPING  {  {1, 0, 5, 0, 0},  \
+                                 {2, 1, 6, 0, 0},  \
+                                 {3, 2, 7, 0, 0},  \
+                                 {4, 3, 8, 0, 0} }
+#define AMBIENT_PIN 8
+
+/*-----------------*/
 /* Global settings */
 /*-----------------*/
 // PIN settings

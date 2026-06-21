@@ -107,6 +107,8 @@ BoxDisplay boxDisplay; // Box display instance
 BoxKeyboard boxKeyboard;
 //CameraHandler cameraHandler; // Camera handler instance
 
+DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
+
 void handleKey(uint8_t k);
 //  void processPassword();         ### asi smazat
 //void boxDisplay.logPrint(String logText);
@@ -215,9 +217,28 @@ void handleGetAmbient(AsyncWebSocketClient *sender, JsonObj data)
 void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
 {
     JsonDocument response; 
-    uint8_t doorNum = data["doornum"];
-    if (doorNum < DOOR_COUNT) {
-      uint8_t isOpen = gpioHal.readDoorState(doorNum);
+    uint8_t doorNum;
+    char* endptr;
+    unsigned long lnum;
+    
+    if (data["doornum"] == nullptr || strlen(data["doornum"]) == 0) {
+        boxDisplay.logPrint("Error: Missing door number in request");
+        response["lastresult"] = "Error: Missing door number in request";
+        webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+        return;
+    }
+    lnum = strtoul(data["doornum"], &endptr, 10);
+    if (lnum > 254 || lnum == 0 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
+      boxDisplay.logPrint("Error: Invalid door number " + String(lnum));
+      response["lastresult"] = "Error: Invalid door number " + String(lnum);
+      webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+      return;
+    }
+    doorNum = static_cast<uint8_t>(lnum);
+
+//    if (doorNum < DOOR_COUNT) {
+    uint8_t isOpen = gpioHal.readDoorState(doorNum);
+    if(isOpen != DOOR_UNKNOWN) {
       if (isOpen == DOOR_MIXED) {
         isOpen = DOOR_OPEN;                 // ### to be fixed when UI can properly handle MIXED state, meanwhile show mixed state as open for the response, but log it as a warning
         boxDisplay.logPrint("Warning: Mixed state detected for door " + String(doorNum));
@@ -264,30 +285,28 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
   const char* doorNumStr = data["doornum"];
 
   if (doorNumStr) {
-    String doorNumString(doorNumStr);
-    std::vector<String> doorNums;
-    int start = 0;
-    int end = doorNumString.indexOf(';');
-    while (end != -1) {
-      doorNums.push_back(doorNumString.substring(start, end));
-      start = end + 1;
-      end = doorNumString.indexOf(';', start);
-    }
-    doorNums.push_back(doorNumString.substring(start));
-
+//    String doorNumString(doorNumStr);
+//    std::vector<String> doorNums;
     JsonDocument response; 
-    actualState = BOXSTATE_OPENING;
-    doorOpenTimeout = currentMillis + DOOR_OPENING_TIMEOUT;
-    boxDisplay.writeResponseLine(RESPONSELINE_OPENING);
-    disableExternal();
-
-    for (const String& numStr : doorNums) {
-      uint8_t num = numStr.toInt();
-      if (num < DOOR_COUNT) {
-        // Issue pulse to open the box
-        gpioHal.openDoor(num);  // HAL should handle the timing of the pulse, i.e. turn on the lock for a short time and then turn it off, so we don't have to worry about it here, but we might want to add some error handling in case the door fails to open, e.g. by checking the state after a delay and retrying if it's not open, or by returning an error response to the UI
-        gpioHal.ambientOn(); // pro test, zatím rozsvítí ambient světlo jako indikaci, že jsme zpracovali požadavek, než bude implementováno plánování odeslání stavu dveří
-      }
+    char* endptr;
+    unsigned long lnum = strtoul(doorNumStr, &endptr, 10);
+    if (lnum > 254 || lnum == 0 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
+      boxDisplay.logPrint("Error: Invalid door number " + String(lnum));
+      response["lastresult"] = "Error: Invalid door number " + String(lnum);
+      webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+      return;
+    }
+    uint8_t num = static_cast<uint8_t>(lnum);
+    if ( gpioHal.openDoor(num) == num ) {  // i.e. the logical door number exists and the door is not already open, so we can proceed to open it
+      gpioHal.ambientOn(); 
+      actualState = BOXSTATE_OPENING;
+      doorOpenTimeout = currentMillis + DOOR_OPENING_TIMEOUT;
+      boxDisplay.writeResponseLine(RESPONSELINE_OPENING);
+      disableExternal();
+    } else {
+      boxDisplay.logPrint("Error opening door " + String(num) + ": door is already open or invalid door number");
+      response["lastresult"] = "Error opening door " + String(num) + ": door is already open or invalid door number";
+      webSocketManager.sendMessage(sender, COMM_CONTENT, response);
     }
      //serializeJson(response, serializedChanges);
   }
@@ -355,6 +374,19 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
       recToSave.remaining = data["amount"];
     } else {
       recToSave.remaining = -1; // defaults to unlimited (-1), 0 means expired
+    }
+    if (data["doornum"] != nullptr) {
+      char* endptr;
+      unsigned long lnum = strtoul(data["doornum"], &endptr, 10);
+      if (lnum > 254 || lnum == 0 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
+        boxDisplay.logPrint("Error: Invalid door number " + String(lnum));
+        statusResponse["lastresult"] = "Error: Invalid door number " + String(lnum);
+        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
+        return;
+      }
+      recToSave.doorNum = static_cast<uint8_t>(lnum);
+    } else {
+      recToSave.doorNum = 1; // when not specified assume door 1, to avoid accidentally creating pins that don't work with any door, better to have a default door number than to have it uninitialized and potentially cause random behavior
     }
     if (pinId){                   // update existing pin
       if ( pinStorage.updatePin(recToSave) == pinId ) {
@@ -468,7 +500,8 @@ void setup() {
 
   // Initialize timer manager and GPIO HAL (GPIO HAL needs timer manager for scheduling future tasks, e.g. to turn off the lock after some time)
   timerManager.initializeTimerManager(handleDueActions);
-  gpioHal.initializeGpioHAL(&timerManager);
+  //GpioHAL::ambientPin = AMBIENT_PIN; // Set the ambient light pin in GpioHAL before initializing it
+  gpioHal.initializeGpioHAL(&timerManager, initialDoorMappings, AMBIENT_PIN, sizeof(initialDoorMappings) / sizeof(initialDoorMappings[0]));
 
   // Initializa keyboard (null operation at present)
   boxKeyboard.keyboardInit();
@@ -567,24 +600,13 @@ void handleDueActions(uint8_t action, const char* arg) {
     case NOTIFY_DOOR_CHANGE: {
         JsonDocument response;
         uint8_t doorNum = atoi(arg);
-        if (doorNum >= DOOR_COUNT) {
-          boxDisplay.logPrint("Error: Invalid door number in timer callback: " + String(doorNum));
-          return;
-        }
-        if (gpioHal.readDoorState(doorNum) == DOOR_MIXED) {
+        uint8_t isOpen = gpioHal.readDoorState(doorNum);
+        if (isOpen == DOOR_MIXED) {
           boxDisplay.logPrint("Warning: Mixed state detected for door " + String(doorNum) + " during notification");
         }
-        if (gpioHal.getLogDoorMapping(doorNum) != doorNum) {
-          uint8_t logDoorNum = gpioHal.getLogDoorMapping(doorNum);
-          for (uint8_t i = 0; i < DOOR_COUNT; i++) {
-            if (gpioHal.getLogDoorMapping(i) == logDoorNum) {
-              gpioHal.setDoorLastState(i, gpioHal.readDoorState(i));
-            }
-          }
-        } else {
-          gpioHal.setDoorLastState(doorNum, gpioHal.readDoorState(doorNum));
+        if (isOpen == DOOR_UNKNOWN) {
+          boxDisplay.logPrint("Error: Invalid door number " + String(doorNum) + " in notification");
         }
-        uint8_t isOpen = gpioHal.readDoorState(doorNum);
         if (isOpen == DOOR_OPEN) {
           response["door_state_open"] = "yes";
           response["door_state_closed"] = "no";
@@ -604,8 +626,8 @@ void handleDueActions(uint8_t action, const char* arg) {
     case LOCK_DEACTIVATE: {
         boxDisplay.logPrint(arg);
         uint8_t lockNum = atoi(arg);
-        if (lockNum < DOOR_COUNT) {
-          gpioHal.lockDeactivate(lockNum);
+        uint8_t result = gpioHal.lockDeactivate(lockNum);
+        if (result != 0) {
           boxDisplay.logPrint("Lock " + String(lockNum) + " deactivated\n");
         } else {
           boxDisplay.logPrint("Error: Invalid lock number in timer callback: " + String(lockNum));
@@ -679,8 +701,8 @@ void handleKeyboard(){
             boxDisplay.writeInfoLine(INFOLINE_CANCEL);
 //            boxDisplay.writeActionLine(ACTIONLINE_PRESENCE);
             boxDisplay.setVerifyCode(presenceCode);
-            boxDisplay.setVerifyCodeBar((presenceCodeExpiration - currentMillis)/PRESENCE_CODE_VALIDITY*100);
-            boxDisplay.writeResponseLine(RESPONSELINE_PRESENCE);
+            boxDisplay.setProgressBar((presenceCodeExpiration - currentMillis)/PRESENCE_CODE_VALIDITY*100);
+            boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
           } else {
             Serial.println("Invalid command input");
           }
@@ -765,8 +787,8 @@ void loop() {
         if (displayActionMillis < currentMillis) {
           disableExternal();
           boxDisplay.writeActionLine(ACTIONLINE_HOME);
-          boxDisplay.setVerifyCodeBar((badPasswordDelayFinish - currentMillis) / currentBadPasswordMillis * 100);
-          boxDisplay.writeResponseLine(RESPONSELINE_PRESENCE);
+          boxDisplay.setProgressBar((badPasswordDelayFinish - currentMillis) / currentBadPasswordMillis * 100);
+          boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
           displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL; 
         }
       }
@@ -782,8 +804,8 @@ void loop() {
       break;
     case BOXSTATE_PRESENCE:
       if (displayActionMillis < currentMillis) {
-        boxDisplay.setVerifyCodeBar((presenceCodeExpiration - currentMillis)/PRESENCE_CODE_VALIDITY*100);
-        boxDisplay.writeResponseLine(RESPONSELINE_PRESENCE);
+        boxDisplay.setProgressBar((presenceCodeExpiration - currentMillis)/PRESENCE_CODE_VALIDITY*100);
+        boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
         displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL;
       }
       if (presenceCodeExpiration < currentMillis) {

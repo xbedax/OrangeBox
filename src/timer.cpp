@@ -31,7 +31,11 @@ int TimerManager::scheduleOnce(unsigned long delayMs, uint8_t action, const char
   timers[slot].interval = delayMs;
   timers[slot].repeat = false;
   timers[slot].action = action;
-  strcpy(timers[slot].arg, arg);
+  if (arg != NULL) {
+    strcpy(timers[slot].arg, arg);
+  } else {
+    timers[slot].arg[0] = '\0';
+  }
   if (firstTimer == 0 || timers[slot].dueTime < firstTimer) {
     firstTimer = timers[slot].dueTime;
     firstTimerIdx = slot;
@@ -49,7 +53,11 @@ int TimerManager::scheduleRepeat(unsigned long intervalMs, uint8_t action, const
   timers[slot].dueTime = millis() + intervalMs;
   timers[slot].interval = intervalMs;
   timers[slot].repeat = true;
-  strcpy(timers[slot].arg, arg);
+  if (arg != NULL) {
+    strcpy(timers[slot].arg, arg);
+  } else {
+    timers[slot].arg[0] = '\0';
+  }
   timers[slot].action = action;
   if (firstTimer == 0 || timers[slot].dueTime < firstTimer) {
     firstTimer = timers[slot].dueTime;

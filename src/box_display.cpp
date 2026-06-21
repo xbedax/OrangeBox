@@ -209,16 +209,16 @@ void BoxDisplay::writeResponseLine (uint8_t responseType) {
     return;
   }
 
-  if (responseType == RESPONSELINE_PRESENCE) {
-    char barBuf[PRESENCE_BAR_WIDTH + 1]; // Buffer to hold the progress bar string, adjust size as needed
-    for (uint8_t i = 0; i < PRESENCE_BAR_WIDTH; i++) {
-      if (i < (currentVerifyCodeProgress * PRESENCE_BAR_WIDTH) / 100) {
+  if (responseType == RESPONSELINE_PROGRESS) {
+    char barBuf[PROGRESS_BAR_WIDTH + 1]; // Buffer to hold the progress bar string, adjust size as needed
+    for (uint8_t i = 0; i < PROGRESS_BAR_WIDTH; i++) {
+      if (i < (currentProgress * PROGRESS_BAR_WIDTH) / 100) {
         barBuf[i] = 'o'; // Filled part of the progress bar
       } else {  
         barBuf[i] = '.'; // Unfilled part of the progress bar
       }
     }
-    barBuf[PRESENCE_BAR_WIDTH] = '\0'; // Null-terminate the string
+    barBuf[PROGRESS_BAR_WIDTH] = '\0'; // Null-terminate the string
     #ifdef DISP_LCD
       lcd1.setCursor(0, ACTION_LINE_IDX);
       lcd1.print(centerLine(barBuf)); 
@@ -286,9 +286,9 @@ void BoxDisplay::setVerifyCode (const char* code) {
 }
 
 // shows presence code expiration bar based on input 
-void BoxDisplay::setVerifyCodeBar (uint8_t expirationProgress) {
-    currentVerifyCodeProgress = expirationProgress;
-    writeResponseLine(RESPONSELINE_PRESENCE);
+void BoxDisplay::setProgressBar (uint8_t expirationProgress) {
+    currentProgress = expirationProgress;
+    writeResponseLine(RESPONSELINE_PROGRESS);
 }
 
 void BoxDisplay::displayInit(GpioHAL* gpioHal) {

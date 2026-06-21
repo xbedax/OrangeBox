@@ -18,6 +18,7 @@
 
 #define AMBIENT_ON 1
 #define AMBIENT_OFF 0
+#define INVALID_PIN 255
 
 typedef struct {
     uint8_t logDoorNum;         // For door combinations, e.g. adjacent doors operated together
@@ -53,7 +54,7 @@ public:
   uint8_t lockDeactivate(uint8_t doorNum);
 
   // Set the mapping for a specific door
-  void setDoorMapping(uint8_t index, uint8_t logDoorNum, uint8_t gpioPin = 0, uint8_t statePin = 0, uint8_t extenderNum = 0);
+  void setDoorMapping(uint8_t index, uint8_t logDoorNum, uint8_t gpioPin = INVALID_PIN, uint8_t statePin = INVALID_PIN, uint8_t extenderNum = 0);
 
   // Get the mapping for a specific door
   uint8_t getLogDoorMapping(uint8_t index);
@@ -62,7 +63,7 @@ public:
   void removeDoorMapping(uint8_t index);  
 
   // Initialize GPIO pins based on the current door mappings
-  void initializeGpioHAL(TimerManager* timerManager);
+  void initializeGpioHAL(TimerManager* timerManager,DoorMapping* initialMappings = nullptr, uint8_t ambientPin = INVALID_PIN, uint8_t mappingSize = 0);
 
   void setAmbientPin(uint8_t pin); // Set the pin used for ambient light control
 
@@ -71,9 +72,10 @@ public:
 
 private:
 
-  TimerManager* timerManager;           // Pointer to the timer manager for scheduling future tasks
+  TimerManager* timerManager = nullptr;           // Pointer to the timer manager for scheduling future tasks
   // Door lock pins (active HIGH)
   static const uint8_t doorLockPins[];
+  uint8_t activeDoorNum = 0;                // Number of initialized doors
 
   // Door state pins (HIGH = open)
   static const uint8_t doorStatePins[DOOR_COUNT];
