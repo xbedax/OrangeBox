@@ -84,34 +84,38 @@ void TimerManager::update(unsigned long now) {
   if (now == 0) {
     now = millis();
   }
-  if (firstTimer != 0 && (long) now  < firstTimer) {
+
+  if (firstTimer == 0) {
+    return; // No active timers
+  }
+
+  if ((long)(now - firstTimer) < 0) {
     return; // No timers are due yet
   }
-  actionHandler(timers[firstTimerIdx].action, timers[firstTimerIdx].arg);
-  if (timers[firstTimerIdx].repeat) {
-    timers[firstTimerIdx].dueTime = now + timers[firstTimerIdx].interval;
-  } else {
-    timers[firstTimerIdx].active = false;
-  }
+
   firstTimer = 0;
+
   for (int i = 0; i < MAX_TIMERS; ++i) {
     if (!timers[i].active) {
       continue;
     }
 
-    if ((long) now >= timers[i].dueTime)  {
-      actionHandler(timers[i].action, timers[i].arg);
+    if ((long)(now - timers[i].dueTime) >= 0)  {
+      if (actionHandler != nullptr) {
+        actionHandler(timers[i].action, timers[i].arg);
+      }
+
       if (timers[i].repeat) {
         timers[i].dueTime = now + timers[i].interval;
       } else {
         timers[i].active = false;
         continue;
       } 
-      if (firstTimer == 0 || timers[i].dueTime < firstTimer) {
-        firstTimer = timers[i].dueTime;
-        firstTimerIdx = i;
-      }
-      
+    }
+
+    if (firstTimer == 0 || (long)(timers[i].dueTime - firstTimer) < 0) {
+      firstTimer = timers[i].dueTime;
+      firstTimerIdx = i;
     }
   }
 }

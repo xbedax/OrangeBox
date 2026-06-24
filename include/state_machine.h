@@ -62,10 +62,12 @@ struct BoxStateContext {
     uint8_t doorToOpen;
     uint8_t badPasswordCount;
     uint32_t doorOpenTimeout;
+    uint32_t passwordEntryTimeout;
     uint32_t badPasswordDelayFinish;
     uint32_t presenceCodeExpiration;
     uint32_t ambientOffTimeout;
     uint32_t displayActionMillis;
+    uint32_t currentPasswordEntryMillis;     // Total duration of current password entry timeout
     uint32_t currentBadPasswordMillis;      // Total duration of current bad password delay
     char presenceCode[7];                   // 6 digits + null terminator
 };
@@ -86,7 +88,7 @@ struct BoxStateContext {
  * 
  * Functions that modify state:
  * - handleOpenBox() -> WebOpenBox event
- * - handleKeyboard() -> KeyboardKey1/2/Enter/Cancel events
+ * - BoxKeyboard::handleKeyboard() -> KeyboardKey1/2/Enter/Cancel events
  * - Timer callbacks -> *Timeout events
  * - Door sensors -> DoorOpened/DoorClosed events
  */

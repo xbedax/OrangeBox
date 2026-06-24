@@ -24,10 +24,12 @@ typedef struct {
     char currentKey;
 } keyboardStatus;
 
+class BoxStateMachine;
+
 class BoxKeyboard {
 public:
     void keyboardInit();
-    bool pollKeyboard(keyboardStatus *keyboard);
+    void handleKeyboard(keyboardStatus *keyboardState, BoxStateMachine *stateMachine);
     void clearPassword(keyboardStatus *keyboardState);
     
 
@@ -43,6 +45,7 @@ private:
 
     void handleKey(uint8_t k, keyboardStatus *keyboardState);   
     bool pollKeypad(keyboardStatus *keyboardState);
+    bool pollKeyboard(keyboardStatus *keyboardState);
     bool processPassword(keyboardStatus *keyboardState);
 //    void handleCommand(uint8_t key);
 };

@@ -36,6 +36,7 @@
 #include "gpio_hal.h"
 #include "pass_store.h"
 #include "keyboard.h"
+#include "state_machine.h"
 
 uint8_t doorStatePin[] = {3, 4, 5, 6};  // Door state input pins
 uint8_t doorLockPin[] = {0, 1, 2, 3};   // Door lock control pins
@@ -52,15 +53,6 @@ const char *password = WIFI_PASSWD;
 
 //I2C settings
 #define I2C_ADDR 0x42
-
-#define BOXSTATE_HOME           1     //  initial state -> all closed, ambi inactive, no input
-#define BOXSTATE_PASSWORD       2     //  keyboard password input
-#define BOXSTATE_PRESENCE       3     //  presence code displayed
-#define BOXSTATE_OPENING        4     //  valid box open request received (lock pulse running)
-#define BOXSTATE_OPEN           5     //  some door opened
-#define BOXSTATE_CLOSED         6     //   all door closed, ambi and camera still running
-#define BOXSTATE_EXTERNAL       7     //   external command active
-#define BOXSTATE_BADPASS        8     //  waiting after bad password entered
 
 // NTP settings
 const char* ntpServer = NTP_SERVER;
@@ -80,16 +72,6 @@ const long interval = 1000;                     // time to open lock
 unsigned long linkStatusMillis = 0;                   // wifi reconnect timer
 const long linkStatusInterval = LINK_CHECK_INTERVAL;                 // wifi reconnect delay
 keyboardStatus keyboardState;                   // Structure to keep current keyboard info
-char presenceCode[PRESENCE_CODE_LENGTH];        // Active presence code
-unsigned long presenceCodeExpiration;           // When presence code expires
-uint8_t  badPasswordCount = 0;                  // Number of consecutive bad password entry
-unsigned long badPasswordDelayFinish = 0;       //  End of actual bad password delay
-unsigned long currentBadPasswordMillis = 0;     // Actual bad password delay
-uint8_t actualState = BOXSTATE_HOME;            // Master state of the box 
-unsigned long displayActionMillis = 0;          // Used to plan refresh of action line content
-uint8_t doorToOpen = 0;                         //  Currently opened door - at most one in any situation
-unsigned long doorOpenTimeout = 0;              // Waiting for door openning limitation
-unsigned long ambientOffTimeout = 0;            // Dealyed ambient switching off
 unsigned long statusLineTimeout = 0;            // Status line refresh control
 
 
@@ -105,14 +87,15 @@ WebSocketManager webSocketManager; // Websocket manager instance
 PinStorage pinStorage; // Pin storage instance
 BoxDisplay boxDisplay; // Box display instance
 BoxKeyboard boxKeyboard;
+BoxStateMachine boxStateMachine;
 //CameraHandler cameraHandler; // Camera handler instance
 
 DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
 
-void handleKey(uint8_t k);
 //  void processPassword();         ### asi smazat
 //void boxDisplay.logPrint(String logText);
 void handleDueActions(uint8_t action, const char* arg);
+void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis);
 
 // Password handling variables
 uint8_t pass[PASS_MAX];
@@ -176,18 +159,6 @@ b<html>
 </body>
 </html>
 )rawliteral";
-
-void enableExternal(){
-//je potreba doplnit do UI zakaz tlacitka pro otevreni boxu a indikaci, ze box nekdo obsluhuje prezencne
-//dodelat prislusne zpravy
-// funkce bude povolovat externi ovladani
-}
-
-void disableExternal(){
-//je potreba doplnit do UI zakaz tlacitka pro otevreni boxu a indikaci, ze box nekdo obsluhuje prezencne
-//dodelat prislusne zpravy
-// funkce bude zakazovat externi ovladani
-}
 
 void cameraStart(){
 
@@ -285,8 +256,6 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
   const char* doorNumStr = data["doornum"];
 
   if (doorNumStr) {
-//    String doorNumString(doorNumStr);
-//    std::vector<String> doorNums;
     JsonDocument response; 
     char* endptr;
     unsigned long lnum = strtoul(doorNumStr, &endptr, 10);
@@ -297,18 +266,12 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
       return;
     }
     uint8_t num = static_cast<uint8_t>(lnum);
-    if ( gpioHal.openDoor(num) == num ) {  // i.e. the logical door number exists and the door is not already open, so we can proceed to open it
-      gpioHal.ambientOn(); 
-      actualState = BOXSTATE_OPENING;
-      doorOpenTimeout = currentMillis + DOOR_OPENING_TIMEOUT;
-      boxDisplay.writeResponseLine(RESPONSELINE_OPENING);
-      disableExternal();
-    } else {
-      boxDisplay.logPrint("Error opening door " + String(num) + ": door is already open or invalid door number");
-      response["lastresult"] = "Error opening door " + String(num) + ": door is already open or invalid door number";
-      webSocketManager.sendMessage(sender, COMM_CONTENT, response);
-    }
-     //serializeJson(response, serializedChanges);
+
+    BoxEventData event = {};
+    event.eventType = BoxEventType::WebOpenBox;
+    event.data.doorData.doorNum = num;
+    event.data.doorData.doorState = 0;
+    boxStateMachine.processEvent(event);
   }
 }
 
@@ -478,13 +441,6 @@ void registerWebServerRoutes(AsyncWebServer &server) {
   server.on("/capture", AsyncWebRequestMethod::HTTP_GET, handleCapture);
 }
 
-void getPresenceCode (char *PresenceCodePtr){
-  for(int i = 0; i < PRESENCE_CODE_LENGTH; i++){
-    PresenceCodePtr[i] = rand() % 10;
-  }
-  presenceCodeExpiration = currentMillis + PRESENCE_CODE_VALIDITY;
-}
-
 void setup() {
   Serial.begin(9600);
   Serial.println("\n\n --- B O X   prototype starting! ---\n");
@@ -505,6 +461,13 @@ void setup() {
 
   // Initializa keyboard (null operation at present)
   boxKeyboard.keyboardInit();
+  keyboardState.keyboardMode = KEYBOARD_MODE_COMMAND;
+  keyboardState.currentPasswordLen = 0;
+  keyboardState.passwordComplete = false;
+  keyboardState.cancelPressed = false;
+
+  boxStateMachine.initialize();
+  boxStateMachine.setStateChangeCallback(onStateChanged);
 
   // Create mutex for thread safety
   imageMutex = xSemaphoreCreateMutex();
@@ -593,6 +556,29 @@ void setup() {
 
 }  //setup
 
+void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis) {
+  (void)oldState;
+  (void)currentMillis;
+
+  if (newState == BoxState::Open) {
+    cameraStart();
+  }
+
+  if (newState == BoxState::Home) {
+    cameraStop();
+  }
+
+  if (newState == BoxState::Password) {
+    keyboardState.keyboardMode = KEYBOARD_MODE_PASSWORD;
+    keyboardState.currentPasswordLen = 0;
+    keyboardState.passwordComplete = false;
+    keyboardState.cancelPressed = false;
+    boxKeyboard.clearPassword(&keyboardState);
+  } else {
+    keyboardState.keyboardMode = KEYBOARD_MODE_COMMAND;
+  }
+}
+
 void handleDueActions(uint8_t action, const char* arg) {
   // Implement the logic to perform actions based on the action code and argument
   // For example:
@@ -621,6 +607,14 @@ void handleDueActions(uint8_t action, const char* arg) {
           response["door_state_mixed"] = "yes";
         } 
         webSocketManager.notifyClients(COMM_VISIBILITY, response);      
+
+        if (isOpen == DOOR_OPEN || isOpen == DOOR_CLOSED) {
+          BoxEventData event = {};
+          event.eventType = (isOpen == DOOR_OPEN) ? BoxEventType::DoorOpened : BoxEventType::DoorClosed;
+          event.data.doorData.doorNum = doorNum;
+          event.data.doorData.doorState = isOpen;
+          boxStateMachine.processEvent(event);
+        }
       }
       break;
     case LOCK_DEACTIVATE: {
@@ -641,11 +635,13 @@ void handleDueActions(uint8_t action, const char* arg) {
       break;
     
     case PASSWORD_TIMEOUT:
-        boxDisplay.logPrint ("Password timeout passed\n");
-        actualState = BOXSTATE_PASSWORD;
-        keyboardState.currentPasswordLen=0;
-        keyboardState.keyboardMode=KEYBOARD_MODE_PASSWORD;
-        boxDisplay.writeActionLine(ACTIONLINE_OPEN_PASSWORD);
+        boxDisplay.logPrint("Password timeout passed\n");
+        {
+          BoxEventData event = {};
+          event.eventType = BoxEventType::PasswordTimeout;
+          boxStateMachine.processEvent(event);
+        }
+      break;
 
     default:
       boxDisplay.logPrint ("Unknown due action called");
@@ -681,189 +677,19 @@ void checkLinkStatus() {
     linkStatusMillis = currentMillis + linkStatusInterval;
 } // checkWifi()
 
-void handleKeyboard(){
-// Keyboard input handling
-  if ( boxKeyboard.pollKeyboard(&keyboardState) ){
-    switch (actualState ){
-      case BOXSTATE_HOME:
-        if(keyboardState.keyboardMode == KEYBOARD_MODE_COMMAND) {
-          if (keyboardState.currentKey == KEYBOARD_KEY_1) {     //switch to password
-            keyboardState.currentKey = ' ';
-            keyboardState.keyboardMode = KEYBOARD_MODE_PASSWORD;
-            keyboardState.currentPasswordLen = 0;
-            actualState = BOXSTATE_PASSWORD;
-            boxDisplay.writeInfoLine (INFOLINE_HOME);
-            boxDisplay.writeActionLine (ACTIONLINE_OPEN_PASSWORD);
-            // ### sem se musi pridat blokace UI
-          } else if (keyboardState.currentKey == KEYBOARD_KEY_2) { // switch to presence
-            actualState = BOXSTATE_PRESENCE;
-            getPresenceCode(presenceCode);
-            boxDisplay.writeInfoLine(INFOLINE_CANCEL);
-//            boxDisplay.writeActionLine(ACTIONLINE_PRESENCE);
-            boxDisplay.setVerifyCode(presenceCode);
-            boxDisplay.setProgressBar((presenceCodeExpiration - currentMillis)/PRESENCE_CODE_VALIDITY*100);
-            boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
-          } else {
-            Serial.println("Invalid command input");
-          }
-        } else {
-          keyboardState.keyboardMode = KEYBOARD_MODE_COMMAND;                // shouldn't happen -> synchronize keyboard with overal state
-        }
-        break;
-      case BOXSTATE_PASSWORD:
-        if (keyboardState.keyboardMode == KEYBOARD_MODE_PASSWORD) {
-          if (keyboardState.passwordComplete) {                               // password entered
-            keyboardState.passwordComplete = false;
-            doorToOpen = pinStorage.usePin(keyboardState.currentPassword);
-            if (doorToOpen > 0) {                                            // valid PIN
-              actualState = BOXSTATE_OPENING;
-              gpioHal.openDoor(doorToOpen);
-              doorOpenTimeout = currentMillis + DOOR_OPENING_TIMEOUT;
-              boxDisplay.writeResponseLine(RESPONSELINE_OPENING);
-              badPasswordCount = 0;
-            } else {
-              boxDisplay.writeResponseLine(RESPONSELINE_BADPASS);
-              keyboardState.currentPasswordLen = 0;
-              boxKeyboard.clearPassword(&keyboardState);
-              if (badPasswordCount++ > PASS_ERR_MAXMULTIPLY){
-                currentBadPasswordMillis = PASS_ERR_DELAY * PASS_ERR_MAXMULTIPLY * 1000;
-                badPasswordDelayFinish = PASS_ERR_DELAY * PASS_ERR_MAXMULTIPLY * 1000 + currentMillis;
-              } else {
-                currentBadPasswordMillis = PASS_ERR_DELAY * badPasswordCount * 1000;
-                badPasswordDelayFinish = PASS_ERR_DELAY * badPasswordCount * 1000 + currentMillis;
-              }
-              timerManager.scheduleOnce(currentBadPasswordMillis, PASSWORD_TIMEOUT);
-            }
-            boxKeyboard.clearPassword(&keyboardState);
-            keyboardState.currentPasswordLen = 0;
-          } 
-        } else {
-          keyboardState.keyboardMode = KEYBOARD_MODE_PASSWORD;
-        }
-        break;
-      case BOXSTATE_BADPASS:
-        if(keyboardState.keyboardMode == KEYBOARD_MODE_COMMAND) {
-          if (keyboardState.currentKey == KEYBOARD_KEY_CANCEL) {     //cancel - retorun to HOME
-            keyboardState.currentKey = ' ';
-            actualState = BOXSTATE_HOME;
-            boxDisplay.writeInfoLine (INFOLINE_HOME);
-            boxDisplay.writeActionLine (ACTIONLINE_HOME);
-            boxDisplay.writeResponseLine (RESPONSELINE_HOME);
-            // ### sem se musi pridat blokace UI
-          }
-        } else {
-          keyboardState.keyboardMode = KEYBOARD_MODE_COMMAND;                // shouldn't happen -> synchronize keyboard with overal state
-        }
-        break;
-      }
-    }
-  } //handleKeyboard
-
 void loop() {
-  JsonDocument changes;
   currentMillis = millis();
-    
-  switch (actualState){
-    case BOXSTATE_HOME:
-      enableExternal();
-      handleKeyboard();
-      webSocketManager.cleanupConnections();
-      ElegantOTA.loop();
-      if (currentMillis > linkStatusMillis) {
-        checkLinkStatus();
-      }
-      break;
-    case BOXSTATE_PASSWORD:
-      handleKeyboard();
-      if (badPasswordDelayFinish < currentMillis) {             // time for password entry expired
-        if (actualState == BOXSTATE_PASSWORD){                // avoiding situation when timeous occurs very close to finishing the password
-          actualState = BOXSTATE_HOME;
-          boxDisplay.writeActionLine(ACTIONLINE_HOME);
-          boxDisplay.writeResponseLine(RESPONSELINE_HOME);
-          boxDisplay.writeInfoLine(INFOLINE_HOME);
-          enableExternal();
-        }
-      } else {                                                // continue entering password
-        if (displayActionMillis < currentMillis) {
-          disableExternal();
-          boxDisplay.writeActionLine(ACTIONLINE_HOME);
-          boxDisplay.setProgressBar((badPasswordDelayFinish - currentMillis) / currentBadPasswordMillis * 100);
-          boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
-          displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL; 
-        }
-      }
-      break;
-    case BOXSTATE_BADPASS:
-      if (displayActionMillis < currentMillis) {
-        boxDisplay.writeActionLine(ACTIONLINE_WAIT);
-      }
-      if (badPasswordDelayFinish < currentMillis) {
-        boxDisplay.writeActionLine(ACTIONLINE_OPEN_PASSWORD);
-        boxDisplay.writeInfoLine(INFOLINE_PASS);
-      }
-      break;
-    case BOXSTATE_PRESENCE:
-      if (displayActionMillis < currentMillis) {
-        boxDisplay.setProgressBar((presenceCodeExpiration - currentMillis)/PRESENCE_CODE_VALIDITY*100);
-        boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
-        displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL;
-      }
-      if (presenceCodeExpiration < currentMillis) {
-        actualState = BOXSTATE_HOME;
-        boxDisplay.writeActionLine(ACTIONLINE_HOME);
-        boxDisplay.writeResponseLine(RESPONSELINE_HOME);
-        boxDisplay.writeInfoLine(INFOLINE_HOME);
-      }
-      break;
-      case BOXSTATE_OPENING:
-        if (gpioHal.readDoorState(doorToOpen) == DOOR_OPEN) {
-          actualState = BOXSTATE_OPEN;
-          boxDisplay.writeActionLine(ACTIONLINE_CLOSE);
-          boxDisplay.writeInfoLine(INFOLINE_EMPTY);
-          boxDisplay.writeResponseLine(RESPONSELINE_EMPTY);
-          cameraStart();
-          gpioHal.ambientOn();
 
-        } else {
-          if (currentMillis > doorOpenTimeout) {
-            boxDisplay.logPrint("Error - door" + String(doorToOpen) + "not openned");
-            actualState = BOXSTATE_HOME;
-            boxDisplay.writeActionLine(ACTIONLINE_HOME);
-            boxDisplay.writeResponseLine(RESPONSELINE_HOME);
-            boxDisplay.writeInfoLine(INFOLINE_HOME);
-            cameraStop();
-            enableExternal();
-          }
-        }
-        break;
-      case BOXSTATE_OPEN:
-        if (gpioHal.readDoorState(doorToOpen) == DOOR_CLOSED) {
-            actualState = BOXSTATE_CLOSED;
-            boxDisplay.writeActionLine(ACTIONLINE_CLOSETHX);
-            boxDisplay.writeInfoLine(INFOLINE_EMPTY);
-            boxDisplay.writeResponseLine(RESPONSELINE_EMPTY);
-            ambientOffTimeout = currentMillis + AMBIENT_TIMEOUT;
-        }
-      // je otazkou, jak resit, kdyz se dvere nezavrou, asi nejlepsi je nechat to byt a az nekdo dorazi, tak nejdriv zavre a pak se bude pokracovat v krasojizde
-      // coz by odpovidalo tomu, ze se zde neudela nic
-      // v advanced verzi se dvere oznaci za vadne a prestane se s nimi pracovat
-      // mozna zastavit kameru po nejakem case
-        break;
-      case BOXSTATE_CLOSED:
-        if (ambientOffTimeout < currentMillis) {
-          actualState = BOXSTATE_HOME;
-          gpioHal.ambientOff();
-          cameraStop();
-          boxDisplay.writeActionLine(ACTIONLINE_HOME);
-          boxDisplay.writeResponseLine(RESPONSELINE_HOME);
-          boxDisplay.writeInfoLine(INFOLINE_HOME);
-          enableExternal();
-        }
-        break;
-      case BOXSTATE_EXTERNAL:
-        // UI command running
-        break;
+  timerManager.update(currentMillis);
+  boxKeyboard.handleKeyboard(&keyboardState, &boxStateMachine);
+  boxStateMachine.update(currentMillis);
+
+  webSocketManager.cleanupConnections();
+  ElegantOTA.loop();
+  if (currentMillis > linkStatusMillis) {
+    checkLinkStatus();
   }
+
   if ( statusLineTimeout < currentMillis ) {
     statusLineTimeout = currentMillis + STATUSLINE_REFRESH_INTERVAL;
     boxDisplay.writeStatusLine();

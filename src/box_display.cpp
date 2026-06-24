@@ -27,7 +27,10 @@ String BoxDisplay::centerLine(String text) {
     if (DISP_WIDTH >= textLen) {
         paddLen = (uint8_t)(DISP_WIDTH - textLen) / 2;
         for (uint8_t i = 0; i < paddLen; i++) {
-            centerText = " " + centerText;
+            centerText = " " + centerText + " ";
+        }
+        if (centerText.length() < DISP_WIDTH) {
+            centerText += " ";
         }
     }
 #endif
@@ -116,13 +119,16 @@ void BoxDisplay::writeStatusLine () {
 }
 
 void BoxDisplay::writeActionLine (uint8_t actionType) {
+  char actionLineBuff[DISP_WIDTH + 1]; // Buffer to hold the entire action line
+  uint8_t actionLineIdx = 0;
   if (actionType >= ACTIONIDX_MAX) {
     logPrint("Invalid actionType idx presented\n");
     return;
   }
   #ifdef DISP_LCD
   lcd1.setCursor(0, ACTION_LINE_IDX);
-  lcd1.print(actionTypes[actionType]);
+  strcpy(actionLineBuff, actionTypes[actionType]);
+  actionLineIdx = strlen(actionLineBuff);
   #endif
   switch (actionType) {
     case ACTIONLINE_HOME:
@@ -139,49 +145,43 @@ void BoxDisplay::writeActionLine (uint8_t actionType) {
       }
       #endif
     case ACTIONLINE_OPEN_PASSWORD:
-      for (uint8_t i = 0; i < currentPassLen; i++) {
-        #ifdef DISP_LCD
-        lcd1.print("*"); // Clear remaining part of the line
-        break;
-        #endif
+      for (uint8_t i = 0; i < currentPassLen ; i++) {
+        actionLineBuff[actionLineIdx++] = '*'; // Display stars for password input
       }
-      for (uint8_t i = currentPassLen + strlen(actionTypes[actionType]); i < DISP_WIDTH; i++) {
-        #ifdef DISP_LCD
-        lcd1.print(" "); // Clear remaining part of the line
-        #endif
-      }
-      break;
-    case ACTIONLINE_WAIT:
-      if (nextPasswordWait < 10) {
-        #ifdef DISP_LCD
-        lcd1.print("0"); // Clear remaining part of the line
-        #endif
+      for (uint8_t i = actionLineIdx; i < DISP_WIDTH; i++) {
+        actionLineBuff[i] = ' '; // Clear remaining part of the line
       }
       #ifdef DISP_LCD
-      lcd1.print(nextPasswordWait);
+        lcd1.print(actionLineBuff); 
       #endif
-      for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]) - 2; i++) {
-        #ifdef DISP_LCD
-        lcd1.print(" "); // Clear remaining part of the line
-        #endif
+      break;
+    case ACTIONLINE_BADPASS:
+      for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]); i++) {
+        actionLineBuff[actionLineIdx++] = ' '; // Clear remaining part of the line
       }
+      #ifdef DISP_LCD
+        lcd1.print(actionLineBuff); 
+      #endif
       break;
     case ACTIONLINE_CLOSE:
       for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]); i++) {
-        #ifdef DISP_LCD
-        lcd1.print(" "); // Clear remaining part of the line
-        #endif
+        actionLineBuff[actionLineIdx++] = ' '; // Clear remaining part of the line
       }
+      #ifdef DISP_LCD
+      lcd1.print(actionLineBuff); 
+      #endif
+
       break;
     case ACTIONLINE_PRESENCE:
-      #ifdef DISP_LCD
-      lcd1.print(currentVerifyCode);
-      #endif
+      strcpy(&actionLineBuff[actionLineIdx], currentVerifyCode);
+      actionLineIdx += strlen(currentVerifyCode);
+      
       for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]) - strlen(currentVerifyCode); i++) {
-        #ifdef DISP_LCD
-        lcd1.print(" "); // Clear remaining part of the line
-        #endif
+        actionLineBuff[actionLineIdx++] = ' '; // Clear remaining part of the line
       } 
+      #ifdef DISP_LCD
+        lcd1.print(actionLineBuff); 
+      #endif
       break;
     default:
       // Handle unknown action type if needed
@@ -220,7 +220,7 @@ void BoxDisplay::writeResponseLine (uint8_t responseType) {
     }
     barBuf[PROGRESS_BAR_WIDTH] = '\0'; // Null-terminate the string
     #ifdef DISP_LCD
-      lcd1.setCursor(0, ACTION_LINE_IDX);
+      lcd1.setCursor(0, RESPONSE_LINE_IDX);
       lcd1.print(centerLine(barBuf)); 
     #endif
     return;

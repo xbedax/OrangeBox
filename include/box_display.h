@@ -25,7 +25,7 @@
 #define INFOIDX_MAX      4                              // number of info line types, adjust as needed, but make sure to update the info line content and labels accordingly
 #define INFOLINE_TXT_HOME      " 1-heslo  2-overeni "   // Info line message for mode selection
 #define INFOLINE_TXT_PASS      "*-oprava #-potvrzeni"   // Info line message for password input mode
-#define INFOLINE_TXT_CANCEL    "*-zpet"                 // Info line message for cancel
+#define INFOLINE_TXT_CANCEL    "*-zpet              "                 // Info line message for cancel
 #define INFOLINE_TXT_EMPTY     "                    "
 
 #define INFOLINE_HOME      0                            // Info line message for mode selection
@@ -37,14 +37,14 @@
 #define ACTIONIDX_MAX    6                              // number of action line types, adjust as needed, but make sure to update the action line content and labels accordingly
 
 #define ACTIONLINE_OPEN_PASSWORD              0         // Action: Password input
-#define ACTIONLINE_WAIT                       1         // Action: Wait for next password input
+#define ACTIONLINE_BADPASS                    1         // Action: Waiting for next password input
 #define ACTIONLINE_CLOSE                      2         // Action: Close door
 #define ACTIONLINE_PRESENCE                   3         // Action: Presence code display
 #define ACTIONLINE_HOME                       4         // Action: No action
 #define ACTIONLINE_CLOSETHX                   5         // Action: Door closed
 
 #define ACTIONLINE_TXT_PASS      "   Heslo: "           // Action line message for password input mode
-#define ACTIONLINE_TXT_WAIT      "    Cekejte: "        // Action line message for waiting for password input mode
+#define ACTIONLINE_TXT_BADPASS   "      Cekejte!      " // Action line message for waiting for password input mode
 #define ACTIONLINE_TXT_CLOSE     "   Zavrete dvere!   " // Action line message for closing doors
 #define ACTIONLINE_TXT_PRESENCE  "   Overeni: "         // Action line message for presence detection
 #define ACTIONLINE_TXT_HOME      ""
@@ -145,7 +145,7 @@ void writeResponseLine (uint8_t responseType);
 private:
 
 const char *infoTypes[INFOIDX_MAX] = { INFOLINE_TXT_HOME, INFOLINE_TXT_PASS, INFOLINE_TXT_CANCEL, INFOLINE_TXT_EMPTY };  // Labels for the status indicators, e.g. Client, Link, Ambient, Online
-const char *actionTypes[ACTIONIDX_MAX] = { ACTIONLINE_TXT_PASS, ACTIONLINE_TXT_WAIT, ACTIONLINE_TXT_CLOSE, ACTIONLINE_TXT_PRESENCE, ACTIONLINE_TXT_HOME, ACTIONLINE_TXT_CLOSETHX };  // Labels for the action indicators
+const char *actionTypes[ACTIONIDX_MAX] = { ACTIONLINE_TXT_PASS, ACTIONLINE_TXT_BADPASS, ACTIONLINE_TXT_CLOSE, ACTIONLINE_TXT_PRESENCE, ACTIONLINE_TXT_HOME, ACTIONLINE_TXT_CLOSETHX };  // Labels for the action indicators
 const char *responseTypes[RESPONSEIDX_MAX] = { RESPONSELINE_TXT_OPENING, RESPONSELINE_TXT_BADPASS, RESPONSELINE_TXT_PROGRESS, RESPONSELINE_TXT_HOME, RESPONSELINE_TXT_EMPTY };  // Labels for the response indicators
 char currentStatus[STIDX_MAX];              // Array to hold the current status indicators, e.g. online status, communication status, ambient status, etc.
 char currentDoorOpen[DISP_DOOR_COUNT*2+1];// List of currently open doors, e.g. [1,0,1] for doors 1 and 3 open, door 2 closed, adjust size as needed based on the number of doors and display layout

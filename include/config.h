@@ -9,11 +9,13 @@
 // Enable to use LCD display
 #define DISP_LCD
 // Enable to use OLED display
+#ifndef BOX_SIMULATION
 #define DISP_OLED
+#endif
 // Enable to use SPI camera (Arduino Mega)
 #define CAM_SPI
 // Enable to use ESP32 camera
-#define CAM_ESP
+//#define CAM_ESP
 
 /*-----------------*/
 /* Door mappings */
@@ -22,8 +24,8 @@
 #define INITIAL_DOOR_MAPPING  {  {1, 0, 5, 0, 0},  \
                                  {2, 1, 6, 0, 0},  \
                                  {3, 2, 7, 0, 0},  \
-                                 {4, 3, 8, 0, 0} }
-#define AMBIENT_PIN 8
+                                 {4, 3, 12, 0, 0} }
+#define AMBIENT_PIN 11
 
 /*-----------------*/
 /* Global settings */
@@ -33,11 +35,25 @@
 #define PIN_CODE_LEN 8                      // lenght of the PIN itself
 
 
-// Box password max lenght
+// Password entry settings
 #define PASS_MAX PIN_CODE_LEN
 #define PASS_ERR_DELAY          20          //sec
 #define PASS_ERR_MAXMULTIPLY    4
 #define PASS_ENTRY_TIMEOUT      30          //sec: if password not fully entered within timeout, the entry is discarded and state changet do HOME
+
+// Ambient light settings
+#define AMBIENT_TIMEOUT         10000       // how long to keep ambient light on after door closes, in milliseconds
+
+
+// Presence code settings
+#define PRESENCE_CODE_VALIDITY  30          // sec - from config.h (5 minutes)
+#define PRESENCE_CODE_LENGTH 6                  // Length of the presence code, adjust as needed, but make sure to update the generation and verification logic accordingly
+
+
+
+
+
+
 
 
 #define ACTIONLINE_REFRESH_INTERVAL 1000    //ms
@@ -104,5 +120,5 @@
 #define DATE_TO_UNLIMITED 2147483647            // Timestamp for 2030-12-31, used to represent unlimited validity for pins
 #define DATE_FROM_UNLIMITED 1735689600          // Timestamp for 2025-01-01, used to represent unlimited validity for pins
 
-#define PRESENCE_CODE_LENGTH 6                  // Length of the presence code, adjust as needed, but make sure to update the generation and verification logic accordingly
-#define PRESENCE_CODE_VALIDITY 300              // seconds, i.e. 5 minutes, after this time the presence code is considered expired and the user is considered not present, unless a new presence code is received
+
+

@@ -1,6 +1,6 @@
 /*
 Keyboard abstraction
-the control routine should call pollKeyboard method regularly
+the control routine should call handleKeyboard method regularly
 Communicates via keyboardStates struct:
     - keyboardMode : either the password characters are collected, or pressed keys returned immediatelly
     - currentPasswordLen : number of password characters collected so far
@@ -12,22 +12,28 @@ Communicates via keyboardStates struct:
 
 */
 
+#include <cstring>
 #include <Wire.h>
 #include "config.h"
+#include "box_display.h"
 #include "keyboard.h"
+#include "state_machine.h"
 
+extern BoxDisplay boxDisplay;
 
 // Password completion
 void BoxKeyboard::handleKey(uint8_t k, keyboardStatus *keyboardState) {
   if (k <= 9) {
     if (keyboardState->currentPasswordLen < PASS_MAX) {
-      keyboardState->currentPassword[keyboardState->currentPasswordLen++] = k;
+      keyboardState->currentPassword[keyboardState->currentPasswordLen++] = '0' + k;
+      boxDisplay.setPasswordLength(keyboardState->currentPasswordLen);
     }
     return;
   } 
   if (k == 0x1B) {  // '*' ... erase
     if (keyboardState->currentPasswordLen > 0) {
         keyboardState->currentPasswordLen--;
+        boxDisplay.setPasswordLength(keyboardState->currentPasswordLen);
     } else {
 //    keyboardState->currentPasswordLen = 0;   // CANCEL
 //    keyboardState->passwordComplete = false;
@@ -35,7 +41,6 @@ void BoxKeyboard::handleKey(uint8_t k, keyboardStatus *keyboardState) {
       keyboardState->cancelPressed = true;
 
     }
-//    boxDisplay->setPasswordLength(pass_len); // Update the display with the current password length for input progress visualization
     return;
   }
   if (k == 0x0D) {  // '#' ... enter
@@ -104,7 +109,7 @@ bool BoxKeyboard::pollKeyboard(keyboardStatus *keyboardState) {
             return (pollKeypad(keyboardState) );
         case KEYBOARD_MODE_PASSWORD:
             if (keyboardMode != KEYBOARD_MODE_PASSWORD) {
-              keyboardMode = KEYBOARD_MODE_COMMAND;
+              keyboardMode = KEYBOARD_MODE_PASSWORD;
               keyboardState->currentPasswordLen = 0;
               keyboardState->passwordComplete = false;
             }
@@ -115,6 +120,77 @@ bool BoxKeyboard::pollKeyboard(keyboardStatus *keyboardState) {
 
     }
 } // pollKeyboard
+
+void BoxKeyboard::handleKeyboard(keyboardStatus *keyboardState, BoxStateMachine *stateMachine) {
+  if (keyboardState == nullptr || stateMachine == nullptr) {
+    return;
+  }
+
+  BoxState state = stateMachine->getCurrentState();
+  if (state == BoxState::Password) {
+    keyboardState->keyboardMode = KEYBOARD_MODE_PASSWORD;
+  } else {
+    keyboardState->keyboardMode = KEYBOARD_MODE_COMMAND;
+  }
+
+  if (!pollKeyboard(keyboardState)) {
+    return;
+  }
+
+  if (state == BoxState::Home && keyboardState->keyboardMode == KEYBOARD_MODE_COMMAND) {
+    if (keyboardState->currentKey == KEYBOARD_KEY_1) {
+      BoxEventData event = {};
+      event.eventType = BoxEventType::KeyboardKey1;
+      stateMachine->processEvent(event);
+      keyboardState->currentKey = ' ';
+      return;
+    }
+
+    if (keyboardState->currentKey == KEYBOARD_KEY_2) {
+      BoxEventData event = {};
+      event.eventType = BoxEventType::KeyboardKey2;
+      stateMachine->processEvent(event);
+      keyboardState->currentKey = ' ';
+      return;
+    }
+  }
+
+  if (state == BoxState::Password) {
+    if (keyboardState->passwordComplete) {
+      BoxEventData event = {};
+      event.eventType = BoxEventType::KeyboardEnter;
+      strncpy(event.data.keyboardData.password, keyboardState->currentPassword, sizeof(event.data.keyboardData.password) - 1);
+      event.data.keyboardData.password[sizeof(event.data.keyboardData.password) - 1] = '\0';
+      stateMachine->processEvent(event);
+
+      keyboardState->passwordComplete = false;
+      keyboardState->currentPasswordLen = 0;
+      keyboardState->cancelPressed = false;
+      clearPassword(keyboardState);
+      return;
+    }
+
+    if (keyboardState->cancelPressed) {
+      BoxEventData event = {};
+      event.eventType = BoxEventType::KeyboardCancel;
+      stateMachine->processEvent(event);
+      keyboardState->cancelPressed = false;
+      return;
+    }
+  }
+
+  if (state == BoxState::BadPass || state == BoxState::Presence) {
+    if (keyboardState->currentKey == KEYBOARD_KEY_CANCEL || keyboardState->cancelPressed) {
+      BoxEventData event = {};
+      event.eventType = BoxEventType::KeyboardCancel;
+      stateMachine->processEvent(event);
+      keyboardState->currentKey = ' ';
+      keyboardState->cancelPressed = false;
+      return;
+    }
+  }
+  
+}
 
 void BoxKeyboard::clearPassword(keyboardStatus *keyboardState){
   for(int8_t i = 0; i < PASS_MAX; i++) {
