@@ -83,40 +83,25 @@ void BoxDisplay::displayPassword(uint8_t pass_len) {
 
 void BoxDisplay::writeStatusLine () {
     char statusLine[DISP_WIDTH + 1]; // Buffer to hold the entire status line, adjust size as needed
-    // Write the status line based on current status variables
-    // The actual layout and content can be adjusted as needed, but make sure to update the DISP_DOOR_COUNT definition accordingly if you change the layout
-
-    // Example layout: [Client0][Link][Ambient][Online] Door1 Door2 ...
-    // Where Client0, Link, Ambient, Online are single-character indicators defined by the current status variables, and Door1, Door2, etc. represent the status of each door (e.g. 'O' for open, 'C' for closed)
-
-    //String statusLine = "";
-    
-    // Add door statuses
+    const uint8_t statusStart = DISP_WIDTH - STIDX_MAX;
     uint8_t LineIdx = 0;
-    char buf[3];
+
+    memset(statusLine, ' ', DISP_WIDTH);
     statusLine[LineIdx++] = '['; // Initialize the string
-    for (uint8_t i = 0; i < DISP_DOOR_COUNT; i++) {
-        if (currentDoorOpen[i] != 0) {
-          sprintf(buf, "%02d", currentDoorOpen[i]);  
-          statusLine[LineIdx++] = buf[1];
-          statusLine[LineIdx++] = buf[0];
-        }
-        statusLine[LineIdx++] = currentDoorOpen[i];  // Door status indicator (e.g. 'O' for open, 'C' for closed)
-    }
+
+    uint8_t doorCharsAvailable = statusStart > 2 ? statusStart - 2 : 0;
+    uint8_t doorChars = min((uint8_t)strlen(currentDoorOpen), doorCharsAvailable);
+    memcpy(&statusLine[LineIdx], currentDoorOpen, doorChars);
+    LineIdx += doorChars;
+
     statusLine[LineIdx++] = ']';
-    for (uint8_t i = LineIdx; i < DISP_WIDTH - STIDX_MAX; i++) {
-        statusLine[LineIdx++] = ' '; // Fill remaining space with spaces
-    }
-    uint8_t statusIdx = 0;
-    for (uint8_t i = LineIdx; i < DISP_WIDTH; i++) {
-      statusLine[LineIdx++] = currentStatus[statusIdx++]; // Add status indicators
-    }  
-    statusLine[LineIdx] = '\0';   // Null-terminate the string
+    memcpy(&statusLine[statusStart], currentStatus, STIDX_MAX);
+    statusLine[DISP_WIDTH] = '\0';   // Null-terminate the string
 #ifdef DISP_LCD
     lcd1.setCursor(0, STATUS_LINE_IDX);
     lcd1.print(statusLine);
 #endif
-}
+} // writeStatusLine
 
 void BoxDisplay::writeActionLine (uint8_t actionType) {
   char actionLineBuff[DISP_WIDTH + 1]; // Buffer to hold the entire action line
@@ -184,10 +169,19 @@ void BoxDisplay::writeActionLine (uint8_t actionType) {
       #endif
       break;
     default:
-      // Handle unknown action type if needed
+      if ( actionType < ACTIONIDX_MAX) {
+        for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]); i++) {
+          actionLineBuff[actionLineIdx++] = ' '; // Clear remaining part of the line
+        }
+        #ifdef DISP_LCD
+          lcd1.print(actionLineBuff); 
+        #endif
+      } else {
+        logPrint("Invalid actionType idx presented\n");
+      }
       break;
   }
-}
+} // writeActionLine
 
 void BoxDisplay::writeInfoLine (uint8_t infoType) {
     // Update the infoline as needed
@@ -201,7 +195,7 @@ void BoxDisplay::writeInfoLine (uint8_t infoType) {
     lcd1.setCursor(0, INFO_LINE_IDX);
     lcd1.print(infoTypes[infoType]);
 #endif
-}
+} //writeInfoLine
 
 void BoxDisplay::writeResponseLine (uint8_t responseType) {
   if (responseType >= RESPONSEIDX_MAX) {
@@ -224,7 +218,7 @@ void BoxDisplay::writeResponseLine (uint8_t responseType) {
       lcd1.print(centerLine(barBuf)); 
     #endif
     return;
-  }
+  } //writeResponseLine
 
  #ifdef DISP_LCD
     lcd1.setCursor(0, RESPONSE_LINE_IDX);
@@ -248,31 +242,25 @@ void BoxDisplay::setLinkStatus (char link_status) {
     writeStatusLine();
 }
 
-void BoxDisplay::setOpenDoorList (uint8_t(*doorNums)[] ) {
+void BoxDisplay::setOpenDoorList (void ) {
     // Update the currentDoorOpen array based on the provided list of open doors
-    // doorNums is expected to be an array of door numbers that are currently open, terminated by a special value (e.g. 255) to indicate the end of the list
-    for (uint8_t i = 0; i < DISP_DOOR_COUNT; i++) {
-        currentDoorOpen[i] = 0; // Reset all doors to closed
-    }
+    memset(currentDoorOpen, 0, sizeof(currentDoorOpen));
     bool doorBuf[DOOR_COUNT]; // Buffer to hold the door status string for display, adjust size as needed
     memset(doorBuf, 0, sizeof(doorBuf)); // Clear the buffer
     gpioHAL->getOpenDoors(doorBuf, DOOR_COUNT); // Get the current open doors from the GPIO HAL, fills the currentDoorOpen array with 1 for open and 0 for closed
     uint8_t idx = 0;
     uint8_t doorIdx = 0;
-    while (idx < DOOR_COUNT && idx < DISP_DOOR_COUNT) { // Assuming 255 is used as a terminator for the list
+    while (idx < DOOR_COUNT && doorIdx + 1 < sizeof(currentDoorOpen)) {
         if (doorBuf[idx]) {
-            if (idx < 10) {
-              currentDoorOpen[doorIdx++] = 'O'; // Mark this door as open, adjust character as needed
-            } else {
-              currentDoorOpen[doorIdx++] = char (idx / 10 + '0'); // Mark this door as open, adjust character as needed, using 'A' for doors 10 and above to fit in a single character
-            }
-            currentDoorOpen[doorIdx++] = char (idx % 10 + '0'); // Mark this door as open, adjust character as needed, using 'A' for doors 10 and above to fit in a single character
+            uint8_t doorNum = idx + 1;
+            currentDoorOpen[doorIdx++] = char((doorNum / 10) + '0');
+            currentDoorOpen[doorIdx++] = char((doorNum % 10) + '0');
         }
         idx++;
     }
     currentDoorOpen[doorIdx] = '\0'; // Null-terminate the string
     writeStatusLine();
-}
+} //setOpenDoorList
 
 void BoxDisplay::setPasswordLength (uint8_t pass_len) {
     currentPassLen = pass_len;

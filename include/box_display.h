@@ -48,7 +48,7 @@
 #define ACTIONLINE_TXT_CLOSE     "   Zavrete dvere!   " // Action line message for closing doors
 #define ACTIONLINE_TXT_PRESENCE  "   Overeni: "         // Action line message for presence detection
 #define ACTIONLINE_TXT_HOME      ""
-#define ACTIONLINE_TXT_CLOSETHX  "      Dekujeme!     " 
+#define ACTIONLINE_TXT_CLOSETHX  "      Dekujeme!     " // Action line message for door closed
 
 // Content of Response line - responses to user actions
 #define RESPONSEIDX_MAX 5                               // number of response line types, adjust as needed, but make sure to update the response line content and labels accordingly
@@ -124,7 +124,7 @@ void setCommunicationStatus (char comm_status);
 // Whether the box is online (connected to WiFi or 5G).
 void setLinkStatus (char link_status);
 // Set list of currently open doors, e.g. "1,3" for doors 1 and 3 open, empty string for all closed
-void setOpenDoorList (uint8_t(*doorNums)[] );
+void setOpenDoorList ( void);
 // Set the ambient light status, e.g. 'A' for on, '.' for off
 void setAmbientStatus (char ambient_status);
 // Set the current password length for display purposes, e.g. when the user is entering the password, this can be used to display the progress of password input
@@ -147,8 +147,8 @@ private:
 const char *infoTypes[INFOIDX_MAX] = { INFOLINE_TXT_HOME, INFOLINE_TXT_PASS, INFOLINE_TXT_CANCEL, INFOLINE_TXT_EMPTY };  // Labels for the status indicators, e.g. Client, Link, Ambient, Online
 const char *actionTypes[ACTIONIDX_MAX] = { ACTIONLINE_TXT_PASS, ACTIONLINE_TXT_BADPASS, ACTIONLINE_TXT_CLOSE, ACTIONLINE_TXT_PRESENCE, ACTIONLINE_TXT_HOME, ACTIONLINE_TXT_CLOSETHX };  // Labels for the action indicators
 const char *responseTypes[RESPONSEIDX_MAX] = { RESPONSELINE_TXT_OPENING, RESPONSELINE_TXT_BADPASS, RESPONSELINE_TXT_PROGRESS, RESPONSELINE_TXT_HOME, RESPONSELINE_TXT_EMPTY };  // Labels for the response indicators
-char currentStatus[STIDX_MAX];              // Array to hold the current status indicators, e.g. online status, communication status, ambient status, etc.
-char currentDoorOpen[DISP_DOOR_COUNT*2+1];// List of currently open doors, e.g. [1,0,1] for doors 1 and 3 open, door 2 closed, adjust size as needed based on the number of doors and display layout
+char currentStatus[STIDX_MAX] = {'C', 'E', '.', 'X'};              // Array to hold the current status indicators, e.g. online status, communication status, ambient status, etc.
+char currentDoorOpen[DISP_DOOR_COUNT*2+1];// List of currently open doors, e.g. [0103] for doors 1 and 3 open, door 2 closed, adjust size as needed based on the number of doors and display layout
 int8_t currentPassLen;                      // The length of password entered so far, used for display purposes
 char currentVerifyCode[PASS_MAX + 1];       // The current presence code being displayed, used for display purposes, +1 for null terminator
 int8_t currentProgress;           // Progress of the presence code validity, e.g. for display in a progress bar, value from 0 to 100 representing the percentage of validity time remaining

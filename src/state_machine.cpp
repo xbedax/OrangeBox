@@ -24,6 +24,7 @@ BoxStateMachine::BoxStateMachine() : onStateChange(nullptr) {
 }
 
 void BoxStateMachine::initialize() {
+    unsigned long currentMillis = millis();
     context.state = BoxState::Home;
     context.doorToOpen = 0;
     context.badPasswordCount = 0;
@@ -36,7 +37,8 @@ void BoxStateMachine::initialize() {
     context.currentPasswordEntryMillis = 0;
     context.currentBadPasswordMillis = 0;
     memset(context.presenceCode, 0, sizeof(context.presenceCode));
-    onEnterHome(millis());
+    onEnterHome(currentMillis);
+    scheduleNextDisplayRefresh(currentMillis);
 }
 
 BoxState BoxStateMachine::getCurrentState() const {
@@ -49,7 +51,7 @@ const BoxStateContext& BoxStateMachine::getContext() const {
 
 void BoxStateMachine::processEvent(const BoxEventData& event) {
     unsigned long currentMillis = millis();
-    
+
     switch (event.eventType) {
         case BoxEventType::KeyboardKey1:
         case BoxEventType::KeyboardKey2:
@@ -81,12 +83,16 @@ void BoxStateMachine::processEvent(const BoxEventData& event) {
 
 void BoxStateMachine::update(unsigned long currentMillis) {
     // Time-based state transitions and periodic updates
+    if (isDisplayRefreshDue(currentMillis)) {
+        if (refreshPeriodicDisplay(currentMillis)) {
+            scheduleNextDisplayRefresh(currentMillis);
+        } else {
+            context.displayActionMillis = 0;
+        }
+    }
+
     switch (context.state) {
         case BoxState::Home:
-            if (context.displayActionMillis < currentMillis) {
-                boxDisplay.writeActionLine(ACTIONLINE_HOME);
-                context.displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL;
-            }
             break;
 
         case BoxState::Password:
@@ -94,39 +100,9 @@ void BoxStateMachine::update(unsigned long currentMillis) {
                 transitionTo(BoxState::Home, currentMillis);
                 break;
             }
-
-            if (context.displayActionMillis < currentMillis) {
-                if (context.currentPasswordEntryMillis > 0) {
-                    unsigned long remaining = 0;
-                    if (context.passwordEntryTimeout > currentMillis) {
-                        remaining = context.passwordEntryTimeout - currentMillis;
-                    }
-                    uint8_t progress = (uint8_t)((remaining * 100UL) / context.currentPasswordEntryMillis);
-                    boxDisplay.setProgressBar(progress);
-                    boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
-                }
-
-                context.displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL;
-            }
             break;
 
         case BoxState::BadPass:
-            if (context.displayActionMillis < currentMillis) {
-                boxDisplay.writeActionLine(ACTIONLINE_BADPASS);
-
-                if (context.currentBadPasswordMillis > 0) {
-                    unsigned long remaining = 0;
-                    if (context.badPasswordDelayFinish > currentMillis) {
-                        remaining = context.badPasswordDelayFinish - currentMillis;
-                    }
-                    uint8_t progress = (uint8_t)((remaining * 100UL) / context.currentBadPasswordMillis);
-                    boxDisplay.setProgressBar(progress);
-                    boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
-                }
-
-                context.displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL;
-            }
-
             // Check if bad-password penalty expired
             if (context.badPasswordDelayFinish < currentMillis && context.badPasswordDelayFinish != 0) {
                 if (context.state == BoxState::BadPass) {
@@ -136,17 +112,6 @@ void BoxStateMachine::update(unsigned long currentMillis) {
             break;
             
         case BoxState::Presence:
-            if (context.displayActionMillis < currentMillis) {
-                unsigned long remaining = 0;
-                if (context.presenceCodeExpiration > currentMillis) {
-                    remaining = context.presenceCodeExpiration - currentMillis;
-                }
-                uint8_t progress = (uint8_t)((remaining * 100UL) / (PRESENCE_CODE_VALIDITY * 1000UL));
-                boxDisplay.setProgressBar(progress);
-                boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
-                context.displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL;
-            }
-
             // Check if presence code expired
             if (context.presenceCodeExpiration < currentMillis && context.presenceCodeExpiration != 0) {
                 transitionTo(BoxState::Home, currentMillis);
@@ -204,6 +169,62 @@ unsigned long BoxStateMachine::getAmbientOffTimeout() const {
 
 void BoxStateMachine::setStateChangeCallback(StateChangeCallback callback) {
     onStateChange = callback;
+}
+
+bool BoxStateMachine::isDisplayRefreshDue(unsigned long currentMillis) const {
+    return context.displayActionMillis != 0
+        && static_cast<int32_t>(currentMillis - context.displayActionMillis) >= 0;
+}
+
+void BoxStateMachine::scheduleNextDisplayRefresh(unsigned long currentMillis) {
+    context.displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL;
+}
+
+bool BoxStateMachine::refreshPeriodicDisplay(unsigned long currentMillis) {
+    boxDisplay.setOpenDoorList();
+    boxDisplay.writeStatusLine();
+    switch (context.state) {
+        case BoxState::Home:
+            boxDisplay.writeActionLine(ACTIONLINE_HOME);
+            return true;
+
+        case BoxState::Password:
+            if (context.currentPasswordEntryMillis > 0) {
+                unsigned long remaining = 0;
+                if (context.passwordEntryTimeout > currentMillis) {
+                    remaining = context.passwordEntryTimeout - currentMillis;
+                }
+                uint8_t progress = (uint8_t)((remaining * 100UL) / context.currentPasswordEntryMillis);
+                boxDisplay.setProgressBar(progress);
+            }
+            return true;
+
+        case BoxState::BadPass:
+            boxDisplay.writeActionLine(ACTIONLINE_BADPASS);
+            if (context.currentBadPasswordMillis > 0) {
+                unsigned long remaining = 0;
+                if (context.badPasswordDelayFinish > currentMillis) {
+                    remaining = context.badPasswordDelayFinish - currentMillis;
+                }
+                uint8_t progress = (uint8_t)((remaining * 100UL) / context.currentBadPasswordMillis);
+                boxDisplay.setProgressBar(progress);
+            }
+            return true;
+
+        case BoxState::Presence:
+            {
+                unsigned long remaining = 0;
+                if (context.presenceCodeExpiration > currentMillis) {
+                    remaining = context.presenceCodeExpiration - currentMillis;
+                }
+                uint8_t progress = (uint8_t)((remaining * 100UL) / (PRESENCE_CODE_VALIDITY * 1000UL));
+                boxDisplay.setProgressBar(progress);
+            }
+            return true;
+
+        default:
+            return false;
+    }
 }
 
 void BoxStateMachine::transitionTo(BoxState newState, unsigned long currentMillis) {
@@ -269,6 +290,8 @@ void BoxStateMachine::transitionTo(BoxState newState, unsigned long currentMilli
             onEnterBadPass(currentMillis);
             break;
     }
+
+    scheduleNextDisplayRefresh(currentMillis);
     
     // Notify about state change
     if (onStateChange) {
@@ -334,6 +357,9 @@ void BoxStateMachine::handleWebEvent(const BoxEventData& event, unsigned long cu
 }
 
 void BoxStateMachine::handleSensorEvent(const BoxEventData& event, unsigned long currentMillis) {
+    boxDisplay.setOpenDoorList();
+    Serial.print("->>>>Sensor event in state: " + String(static_cast<int>(context.state)) + ", event: " + String(static_cast<int>(event.eventType)) + ", door: " + String(event.data.doorData.doorNum)); //>>>.
+
     switch (context.state) {
         case BoxState::Opening:
             if (event.eventType == BoxEventType::DoorOpened) {
@@ -394,7 +420,7 @@ void BoxStateMachine::onEnterHome(unsigned long currentMillis) {
     boxDisplay.writeInfoLine(INFOLINE_HOME);            // INFOLINE_HOME
     boxDisplay.writeActionLine(ACTIONLINE_HOME);         // ACTIONLINE_HOME
     boxDisplay.writeResponseLine(RESPONSELINE_HOME);       // RESPONSELINE_HOME
-    context.displayActionMillis = currentMillis;
+    boxDisplay.writeStatusLine();
 }
 
 void BoxStateMachine::onExitHome() {
@@ -410,7 +436,6 @@ void BoxStateMachine::onEnterPassword(unsigned long currentMillis) {
     context.currentPasswordEntryMillis = (unsigned long)PASS_ENTRY_TIMEOUT * 1000UL;
     context.passwordEntryTimeout = currentMillis + context.currentPasswordEntryMillis;
     boxDisplay.setProgressBar(100);
-    context.displayActionMillis = currentMillis + ACTIONLINE_REFRESH_INTERVAL;
     
 }
 
@@ -425,8 +450,6 @@ void BoxStateMachine::onEnterPresence(unsigned long currentMillis) {
     boxDisplay.writeInfoLine(INFOLINE_CANCEL);            // INFOLINE_CANCEL
     boxDisplay.setVerifyCode(context.presenceCode);
     boxDisplay.setProgressBar(100);
-    boxDisplay.writeResponseLine(RESPONSELINE_PROGRESS);
-    context.displayActionMillis = currentMillis;
 }
 
 void BoxStateMachine::onExitPresence() {
@@ -453,6 +476,7 @@ void BoxStateMachine::onEnterOpen(unsigned long currentMillis) {
     boxDisplay.writeActionLine(ACTIONLINE_CLOSE);         // ACTIONLINE_CLOSE
     boxDisplay.writeInfoLine(INFOLINE_EMPTY);            // INFOLINE_EMPTY
     boxDisplay.writeResponseLine(RESPONSELINE_EMPTY);        // RESPONSELINE_EMPTY
+    boxDisplay.writeStatusLine();
     // cameraStart() - call from main.cpp
     
 }
@@ -465,6 +489,7 @@ void BoxStateMachine::onEnterClosed(unsigned long currentMillis) {
     boxDisplay.writeActionLine(ACTIONLINE_CLOSETHX);         // ACTIONLINE_CLOSETHX
     boxDisplay.writeInfoLine(INFOLINE_EMPTY);            // INFOLINE_EMPTY
     boxDisplay.writeResponseLine(RESPONSELINE_EMPTY);        // RESPONSELINE_EMPTY
+    boxDisplay.writeStatusLine();
     context.ambientOffTimeout = currentMillis + AMBIENT_TIMEOUT;
 }
 
@@ -498,7 +523,6 @@ void BoxStateMachine::onEnterBadPass(unsigned long currentMillis) {
     }
     
     boxDisplay.writeActionLine(ACTIONLINE_BADPASS);         // display bad password
-    context.displayActionMillis = currentMillis;
 }
 
 void BoxStateMachine::onExitBadPass() {

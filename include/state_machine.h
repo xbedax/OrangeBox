@@ -157,6 +157,9 @@ private:
     // Helper methods
     bool validatePassword(const char* password);
     void generatePresenceCode();
+    bool isDisplayRefreshDue(unsigned long currentMillis) const;
+    void scheduleNextDisplayRefresh(unsigned long currentMillis);
+    bool refreshPeriodicDisplay(unsigned long currentMillis);
     bool isDoorOpen(uint8_t doorNum) const;
     bool areAllDoorsClosed() const;
     void enableExternal();

@@ -78,11 +78,11 @@ private:
 
     void dumpDisplay() {
         // Print display contents to stdout to simulate Serial console output
-        std::cout << "--- LCD DUMP (" << cols << "x" << rows << ") ---" << std::endl;
+        std::cout << "+- LCD DUMP (" << cols << "x" << rows << ") -+" << std::endl;
         for (int r = 0; r < rows; ++r) {
-            std::cout << buffer[r] << std::endl;
+            std::cout << '|' + buffer[r] + '|' << std::endl;
         }
-        std::cout << "--------------------------" << std::endl;
+        std::cout << "+--------------------+" << std::endl;
     }
 };
 

@@ -2,16 +2,11 @@
 #define WEBSOCKET_H
 
 #include <Arduino.h>
+#include "config.h"
 #include <ArduinoJson.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 
-#define DEFAULT_MAX_WS_CLIENTS 15
-#define WATCHDOG_INTERVAL 10000
-#define WATCHDOG_TIMEOUT 30000
-
-#define COMM_GET_DOOR_STATE "_getDoorState_"
-#define COMM_WATCHDOG "_watchdog_"
 
 // Type aliases
 using JsonObj = JsonObjectConst;

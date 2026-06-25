@@ -50,12 +50,6 @@
 #define PRESENCE_CODE_LENGTH 6                  // Length of the presence code, adjust as needed, but make sure to update the generation and verification logic accordingly
 
 
-
-
-
-
-
-
 #define ACTIONLINE_REFRESH_INTERVAL 1000    //ms
 #define STATUSLINE_REFRESH_INTERVAL 500     //ms
 
@@ -98,6 +92,7 @@
 #define COMM_VISIBILITY "c_visibility"
 #define COMM_CONTENT "c_content"
 
+#define DEFAULT_MAX_WS_CLIENTS 15
 #define WATCHDOG_INTERVAL 10000
 #define WATCHDOG_TIMEOUT 30000 
 

@@ -63,6 +63,18 @@ static void handleTimerAction(uint8_t action, const char* arg)
     }
 }
 
+static void setSimulatedDoorState(uint8_t doorNum, uint8_t doorState)
+{
+    bool isOpen = doorState == DOOR_OPEN;
+    for (size_t i = 0; i < sizeof(initialDoorMappings) / sizeof(initialDoorMappings[0]); i++) {
+        if (initialDoorMappings[i].logDoorNum == doorNum
+            && initialDoorMappings[i].statePin != INVALID_PIN) {
+            digitalWrite(initialDoorMappings[i].statePin, isOpen ? HIGH : LOW);
+        }
+    }
+    gpioHal.setDoorLastState(doorNum, isOpen);
+}
+
 static void runStep(unsigned long advanceMs = 100)
 {
     advanceMillis(advanceMs);
@@ -82,6 +94,7 @@ static void sendDoorEvent(BoxEventType eventType)
         event.data.doorData.doorNum = 1;
     }
     event.data.doorData.doorState = eventType == BoxEventType::DoorOpened ? DOOR_OPEN : DOOR_CLOSED;
+    setSimulatedDoorState(event.data.doorData.doorNum, event.data.doorData.doorState);
     boxStateMachine.processEvent(event);
 }
 
