@@ -1,0 +1,25 @@
+{
+  "pins": [
+    {
+      "pinId": "FIRST",
+      "prev": 0,
+      "next": 1
+    },
+    {
+      "pinId": 1,
+      "prev": "FIRST",
+      "next": "LAST",
+      "door": 2,
+      "name": "seed-ok",
+      "pin": "123456",
+      "from": 1735689600,
+      "to": 2147483647,
+      "remaining": -1
+    },
+    {
+      "pinId": "LAST",
+      "prev": 1,
+      "next": 2
+    }
+  ]
+}

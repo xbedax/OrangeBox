@@ -1,0 +1,25 @@
+{
+  "pins": [
+    {
+      "pinId": "FIRST",
+      "prev": "FIRST",
+      "next": 1
+    },
+    {
+      "pinId": 1,
+      "prev": "FIRST",
+      "next": "LAST",
+      "door": 1,
+      "name": "old",
+      "pin": "111111",
+      "from": 1735689600,
+      "to": 2147483647,
+      "remaining": -1
+    },
+    {
+      "pinId": "LAST",
+      "prev": 2,
+      "next": 3
+    }
+  ]
+}

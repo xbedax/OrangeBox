@@ -30,6 +30,7 @@ public:
 
     const char* c_str() const { return data.c_str(); }
     size_t length() const { return data.length(); }
+    void clear() { data.clear(); }
 
     String substring(size_t from, size_t to) const
     {

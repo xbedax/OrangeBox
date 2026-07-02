@@ -1,0 +1,36 @@
+{
+  "pins": [
+    {
+      "pinId": "FIRST",
+      "prev": "FIRST",
+      "next": 2
+    },
+    {
+      "pinId": 1,
+      "prev": "FIRST",
+      "next": 2,
+      "door": 1,
+      "name": "delete-me",
+      "pin": "111111",
+      "from": 1735689600,
+      "to": 2147483647,
+      "remaining": -1
+    },
+    {
+      "pinId": 2,
+      "prev": 1,
+      "next": "LAST",
+      "door": 2,
+      "name": "keep-me",
+      "pin": "222222",
+      "from": 1735689600,
+      "to": 2147483647,
+      "remaining": -1
+    },
+    {
+      "pinId": "LAST",
+      "prev": 2,
+      "next": 3
+    }
+  ]
+}

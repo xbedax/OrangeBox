@@ -10,6 +10,9 @@
 
 class Preferences {
 public:
+    using Blob = std::vector<uint8_t>;
+    using NamespaceData = std::unordered_map<std::string, Blob>;
+
     bool begin(const char* name, bool readOnly = false)
     {
         namespaceName = name ? name : "";
@@ -23,7 +26,7 @@ public:
             return 0;
         }
 
-        auto& slot = data[std::string(key)];
+        auto& slot = currentNamespace()[std::string(key)];
         slot.resize(len);
         if (len > 0) {
             std::memcpy(slot.data(), value, len);
@@ -37,8 +40,9 @@ public:
             return 0;
         }
 
-        auto found = data.find(std::string(key));
-        if (found == data.end()) {
+        const auto& ns = currentNamespace();
+        auto found = ns.find(std::string(key));
+        if (found == ns.end()) {
             return 0;
         }
 
@@ -57,7 +61,16 @@ public:
         if (readonly || key == nullptr) {
             return false;
         }
-        return data.erase(std::string(key)) > 0;
+        return currentNamespace().erase(std::string(key)) > 0;
+    }
+
+    bool clear()
+    {
+        if (readonly) {
+            return false;
+        }
+        currentNamespace().clear();
+        return true;
     }
 
     bool isKey(const char* key) const
@@ -65,13 +78,39 @@ public:
         if (key == nullptr) {
             return false;
         }
-        return data.find(std::string(key)) != data.end();
+        const auto& ns = currentNamespace();
+        return ns.find(std::string(key)) != ns.end();
+    }
+
+    static const NamespaceData& dumpNamespace(const char* name)
+    {
+        static const NamespaceData empty;
+        auto found = allNamespaces().find(std::string(name ? name : ""));
+        if (found == allNamespaces().end()) {
+            return empty;
+        }
+        return found->second;
+    }
+
+    static void clearAll()
+    {
+        allNamespaces().clear();
     }
 
 private:
     std::string namespaceName;
     bool readonly = false;
-    std::unordered_map<std::string, std::vector<uint8_t>> data;
+
+    NamespaceData& currentNamespace() const
+    {
+        return allNamespaces()[namespaceName];
+    }
+
+    static std::unordered_map<std::string, NamespaceData>& allNamespaces()
+    {
+        static std::unordered_map<std::string, NamespaceData> namespaces;
+        return namespaces;
+    }
 };
 
 #endif // TEST_STUBS_PREFERENCES_H

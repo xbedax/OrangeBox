@@ -23,3 +23,43 @@ Controls:
 - Fake valid PINs are `1234` and `123456`; use `11234#` from Home.
 - `o` simulates the selected door opening, `c` simulates it closing.
 - `.` advances simulated time by 1 second, `>` by 10 seconds, `q` quits.
+
+Pass store console
+------------------
+
+`run_pass_store_console.cmd` builds a small native console wrapper around the
+real `PinStorage` implementation and the test `Preferences` stub.
+
+It can optionally preload the simulated `pins` Preferences namespace from a
+JSON seed before calling `PinStorage::begin()`:
+
+`run_pass_store_console.cmd test\pass_store_seed_ok.json`
+
+`run_pass_store_console.cmd test\pass_store_seed_broken_link.json`
+
+`run_pass_store_console.cmd test\pass_store_seed_broken_forward_link.json`
+
+The broken-forward seed is treated as unrecoverable corruption and resets the
+pool.
+
+`run_pass_store_console.cmd test\pass_store_seed_interrupted_insert_step1.json`
+
+`run_pass_store_console.cmd test\pass_store_seed_interrupted_insert.json`
+
+`run_pass_store_console.cmd test\pass_store_seed_interrupted_delete.json`
+
+Seed files may be a JSON array, or an object with `pins`, `records`, or
+`preferences.pins`. Each record maps to `PinRecord`; use `pinId`/`id`,
+`prevId`/`prev`, `nextId`/`next`, `doorNum`/`door`, `name`, `pin`,
+`validFrom`/`from`, `validTo`/`to`, and `remaining`/`amount`. `pinId`, `prev`,
+and `next` also accept `FIRST`, `LAST`, decimal strings, and 8-digit hex keys.
+
+Runtime input is one JSON object per line. The wrapper accepts either the
+websocket-like shape with `_command_` and `data`, or the data object directly:
+
+`{"clicked":"savebutton","pinname":"demo","pin":"123456","doornum":"1","amount":-1}`
+
+`{"clicked":"deletebutton","pinid":1,"pinname":"demo","pin":"123456"}`
+
+After each action it dumps the active cache and the raw `pins` Preferences
+records, including HEAD/TAIL links.

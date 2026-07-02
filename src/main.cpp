@@ -296,6 +296,15 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
       pinId = data["pinid"];
       recToDelete.name[0] = '\0';
       strncat(recToDelete.name, data["pinname"], PIN_NAME_LEN); 
+      recToDelete.pin[0] = '\0';
+      if (data["pin"] != nullptr) {
+        strncat(recToDelete.pin, data["pin"], PIN_CODE_LEN);
+      } else {
+        boxDisplay.logPrint("Error deleting pin with id " + String(pinId) + ": pin not provided");
+        statusResponse["lastresult"] = "Error deleting pin with id " + String(pinId) + ": pin not provided";
+        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
+        return;
+      }
       if ( pinStorage.removePin(recToDelete) == pinId ) {
         boxDisplay.logPrint("Pin " + String(pinId) + " / " + String(recToDelete.name) + " deleted successfully");
         statusResponse["lastresult"] = "Pin " + String(pinId) + " / " + String(recToDelete.name) + " deleted successfully";
@@ -315,11 +324,20 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
     CacheRecord recToSave;
     recToSave.pinId = pinId;
     recToSave.name[0] = '\0';
+    recToSave.pin[0] = '\0';
     if (data["pinname"] != nullptr) {
       strncat(recToSave.name, data["pinname"], PIN_NAME_LEN);
     } else {
       boxDisplay.logPrint("Error saving pin with id " + String(pinId) + ": pin name not provided");
       statusResponse["lastresult"] = "Error saving pin with id " + String(pinId) + ": pin name not provided";
+      webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
+      return;
+    }
+    if (data["pin"] != nullptr) {
+      strncat(recToSave.pin, data["pin"], PIN_CODE_LEN);
+    } else {
+      boxDisplay.logPrint("Error saving pin with id " + String(pinId) + ": pin not provided");
+      statusResponse["lastresult"] = "Error saving pin with id " + String(pinId) + ": pin not provided";
       webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
       return;
     }
@@ -352,7 +370,7 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
       recToSave.doorNum = 1; // when not specified assume door 1, to avoid accidentally creating pins that don't work with any door, better to have a default door number than to have it uninitialized and potentially cause random behavior
     }
     if (pinId){                   // update existing pin
-      if ( pinStorage.updatePin(recToSave) == pinId ) {
+      if ( pinStorage.updatePin(recToSave) ) {
         boxDisplay.logPrint("Pin " + String(pinId) + " / " + String(recToSave.name) + " saved successfully");
         statusResponse["lastresult"] = "Pin " + String(pinId) + " / " + String(recToSave.name) + " saved successfully";
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);

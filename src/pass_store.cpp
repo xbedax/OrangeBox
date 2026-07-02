@@ -16,7 +16,7 @@
 
     Fault tolerant insertion sequence — 3 writes:
         Relink (TAIL.prevId).nextId → newId
-        Write new record with correct prevId/nextId
+        Write new record with correct prevId/nextId(TAIL)
         Relink TAIL.prevId → newId
     (rollback if only step1 is done, redo if step 2 is done)
 
@@ -55,6 +55,26 @@ tohle je treba presunout do main
 
 bool validatePin(const CacheRecord& p);
 
+static const uint32_t PIN_GC_MAX_SCAN_ID = 4096;
+
+static bool isRealPinId(uint32_t pinId) {
+    return pinId != FIRST_KEY && pinId != LAST_KEY;
+}
+
+static CacheRecord toCacheRecord(const PinRecord& rec) {
+    CacheRecord cacheRec = {};
+    cacheRec.pinId = rec.pinId;
+    cacheRec.validFrom = rec.validFrom;
+    cacheRec.validTo = rec.validTo;
+    cacheRec.doorNum = rec.doorNum;
+    cacheRec.remaining = rec.remaining;
+    strncpy(cacheRec.name, rec.name, MAX_NAME_LENGTH);
+    cacheRec.name[MAX_NAME_LENGTH] = '\0';
+    strncpy(cacheRec.pin, rec.pin, MAX_PIN_LENGTH);
+    cacheRec.pin[MAX_PIN_LENGTH] = '\0';
+    return cacheRec;
+}
+
 bool PinStorage::updatePin(const CacheRecord& rec) {
 
     if (!validatePin(rec)) {
@@ -64,6 +84,7 @@ bool PinStorage::updatePin(const CacheRecord& rec) {
 
     for (auto& record : pinsCache) {
         if (record.pinId == rec.pinId) {
+            record.doorNum = rec.doorNum;
             record.remaining = rec.remaining;
             record.validFrom = rec.validFrom;
             record.validTo = rec.validTo;
@@ -97,7 +118,7 @@ uint32_t PinStorage::addPin(const CacheRecord& rec) {
     newRec.pinId = newId;
     pinsCache.push_back(newRec);
     return newId;
-}
+} //addPin
     
 // Update pin.amount to reflect usage, return true if pin was found and updated, false otherwise
 uint8_t PinStorage::usePin(const char* pinEntered) {
@@ -111,14 +132,15 @@ uint8_t PinStorage::usePin(const char* pinEntered) {
             return false;
         if (p.remaining == 0)
             return false;
+        uint8_t doorNum = p.doorNum;
         if (p.remaining > 1) {
             p.remaining--;
             updatePin(p);
+        } else if (p.remaining == 1) {
+            CacheRecord usedPin = p;
+            removePin(usedPin);
         }
-        if (p.remaining == 1) {
-            removePin(p);
-        }
-        return p.doorNum;
+        return doorNum;
     }
     return 0;
 }
@@ -162,7 +184,13 @@ uint32_t PinStorage::removePin(const CacheRecord& rec) {
     pinKey(nextRec.pinId, nextKey);
     prefs.putBytes(nextKey, &nextRec, sizeof(nextRec));     // update next record
 
-    // remove the record
+    for (auto it = pinsCache.begin(); it != pinsCache.end(); ++it) {
+        if (it->pinId == rec.pinId) {
+            pinsCache.erase(it);
+            break;
+        }
+    }
+
     return rec.pinId;
 }
 
@@ -217,12 +245,13 @@ bool PinStorage::update(const CacheRecord& cacheRec) {
         return false;
     }
     return true;
-}
+} // update
+
 
 
 // Record Key formatting: 8 hex digits of pinId + 0x00  
 void PinStorage::pinKey(uint32_t id, char out[ID_LENGTH + 1]) {
-    snprintf(out, ID_LENGTH + 1, "%08x", id);
+    snprintf(out, ID_LENGTH + 1, "%08X", id);
 }
 
 bool PinStorage::readData(uint32_t id, PinRecord& rec) {
@@ -231,8 +260,8 @@ bool PinStorage::readData(uint32_t id, PinRecord& rec) {
     return prefs.getBytes(key, &rec, sizeof(rec)) == sizeof(rec);
 }
 
+// Check if the pin attributes contain valid values (length, characters, date range)
 bool validatePin(const CacheRecord& p) {
-
     int len = strlen(p.pin);
     if (len < MIN_PIN_LENGTH || len > MAX_PIN_LENGTH)
         return false;
@@ -273,14 +302,14 @@ uint32_t PinStorage::writePin(const PinRecord &pinIn)
         
         pin.nextId = LAST_KEY;
         pin.prevId = lastpin.prevId;
-        prevpin.nextId = pin.pinId;   
+        prevpin.nextId = pin.pinId;
+        pinKey(prevpin.pinId, prevKey);
+        prefs.putBytes(prevKey, &prevpin, sizeof(prevpin));
+        pinKey(pin.pinId, recKey);
+        prefs.putBytes(recKey, &pin, sizeof(pin));
         lastpin.nextId = lastpin.nextId + 1;
         lastpin.prevId = pin.pinId;
         prefs.putBytes(LAST_KEY_KEY, &lastpin, sizeof(lastpin));
-        pinKey(pin.pinId, recKey);
-        prefs.putBytes(recKey, &pin, sizeof(pin));
-        pinKey(prevpin.pinId, prevKey);
-        prefs.putBytes(prevKey, &prevpin, sizeof(prevpin));
     } else {                                            // found, update data   
         if (!verifyLocalChain(pin.pinId)) {
             Serial.printf("[PinStore] update: pinId=%u not properly chained\n", pin.pinId);
@@ -291,7 +320,7 @@ uint32_t PinStorage::writePin(const PinRecord &pinIn)
         prefs.putBytes(recKey, &pin, sizeof(pin));
     }
     return pin.pinId;
-}
+} //writePin
 
 // Verify that the record with the given key is correctly linked in the chain (prevId and nextId point to valid records and link back to this record)
 bool PinStorage::verifyLocalChain(uint32_t pinId) {
@@ -319,7 +348,7 @@ bool PinStorage::isActive(const PinRecord& rec) {
     if (rec.remaining == 0)
         return false;
     return true;
-}
+} // isActive
 
 bool PinStorage::rebuildCache() {
     pinsCache.clear();
@@ -346,15 +375,7 @@ bool PinStorage::rebuildCache() {
                 maxPinId = curPin.pinId;
             }
             if (isActive(curPin)) {
-                cacheRec.pinId = curPin.pinId;
-                cacheRec.validFrom = curPin.validFrom;
-                cacheRec.validTo = curPin.validTo;
-                cacheRec.doorNum = curPin.doorNum;
-                cacheRec.remaining = curPin.remaining;
-                strncpy(cacheRec.name, curPin.name, MAX_NAME_LENGTH);
-                cacheRec.name[MAX_NAME_LENGTH] = '\0';
-                strncpy(cacheRec.pin, curPin.pin, MAX_PIN_LENGTH);
-                cacheRec.pin[MAX_PIN_LENGTH] = '\0';
+                cacheRec = toCacheRecord(curPin);
                 pinsCache.push_back(cacheRec);
             }
         }
@@ -370,30 +391,311 @@ bool PinStorage::rebuildCache() {
 bool PinStorage::begin()
 {
     prefs.begin("pins", false);
-    if (!prefs.isKey(FIRST_KEY_KEY)) {
-        PinRecord rec = {};
-        rec.pinId = FIRST_KEY;
-        rec.prevId = 0; 
-        rec.nextId = LAST_KEY;
-        rec.name[0] = '\0';
-        rec.pin[0] = '\0';
-        prefs.putBytes(FIRST_KEY_KEY, &rec, sizeof(rec));
-    }
-    if (!prefs.isKey(LAST_KEY_KEY)) {
-        PinRecord rec = {};
-        rec.pinId = LAST_KEY;
-        rec.prevId = FIRST_KEY; 
-        rec.nextId = 1;
-        rec.name[0] = '\0';
-        rec.pin[0] = '\0';
-        prefs.putBytes(LAST_KEY_KEY, &rec, sizeof(rec));
-    }
+    garbageCollect();
     rebuildCache();
     return true;
 }
 
+#ifdef BOX_SIMULATION
+const std::vector<CacheRecord>& PinStorage::debugCache() const
+{
+    return pinsCache;
+}
+#endif
+
+bool PinStorage::writeData(const PinRecord& rec) {
+    char key[ID_LENGTH + 1];
+    pinKey(rec.pinId, key);
+    return prefs.putBytes(key, &rec, sizeof(rec)) == sizeof(rec);
+}
+
+void PinStorage::resetPool() {
+    prefs.clear();
+
+    PinRecord head = {};
+    head.pinId = FIRST_KEY;
+    head.prevId = FIRST_KEY;
+    head.nextId = LAST_KEY;
+    writeData(head);
+
+    PinRecord tail = {};
+    tail.pinId = LAST_KEY;
+    tail.prevId = FIRST_KEY;
+    tail.nextId = 1;
+    writeData(tail);
+
+    pinsCache.clear();
+    maxPinId = 0;
+    nextPinId = 1;
+}
+
+bool PinStorage::ensurePool() {
+    PinRecord head = {};
+    PinRecord tail = {};
+    bool hasHead = readData(FIRST_KEY, head);
+    bool hasTail = readData(LAST_KEY, tail);
+
+    if (!hasHead && !hasTail) {
+        Serial.println("[PinStore] GC: empty pin pool, creating sentinels");
+        resetPool();
+        return false;
+    }
+
+    if (!hasHead || !hasTail || head.pinId != FIRST_KEY || tail.pinId != LAST_KEY) {
+        Serial.println("[PinStore] GC: corrupted sentinels, resetting pin pool");
+        resetPool();
+        return false;
+    }
+
+    return true;
+}
+
+bool PinStorage::isStoredPinValid(const PinRecord& rec) {
+    if (!isRealPinId(rec.pinId)) {
+        return false;
+    }
+
+    PinRecord normalized = rec;
+    normalized.name[MAX_NAME_LENGTH] = '\0';
+    normalized.pin[MAX_PIN_LENGTH] = '\0';
+    CacheRecord cacheRec = toCacheRecord(normalized);
+    return validatePin(cacheRec);
+}
+
+// Going from HEAD to TAIL, find the last reachable record in the chain, return true the last valid points to TAIL, false if the chain is broken or exceeds the maximum number of steps
+//bool PinStorage::findLastReachableFromHead(PinRecord& lastRec) {
+//    PinRecord current = {};
+//    if (!readData(FIRST_KEY, current) || current.pinId != FIRST_KEY) {
+//        return false;
+//    }
+//    for (uint32_t steps = 0; steps < PIN_GC_MAX_SCAN_ID; steps++) {
+//        if (current.nextId == LAST_KEY) {
+//            lastRec = current;
+//            return true;
+//        }
+//
+//        if (!isRealPinId(current.nextId)) {
+//            return false;
+//        }
+//
+//        PinRecord next = {};
+//        if (!readData(current.nextId, next) || next.pinId != current.nextId) {
+//            return false;
+//        }
+//
+//        if (!isStoredPinValid(next) || next.prevId != current.pinId) {
+//            return false;
+//        }
+//
+//        current = next;
+//    }
+//
+//    return false;
+//} // findLastReachableFromHead
+
+bool PinStorage::repairTailInsert() {
+    PinRecord tail = {};
+    if (!readData(LAST_KEY, tail) || tail.pinId != LAST_KEY) {
+        return false;
+    }
+    if (tail.prevId == FIRST_KEY) {         // empty pool, nothing to repair, at least form insertion point of view
+        return true;
+    }
+    if (tail.prevId == LAST_KEY) {          // to avoid infinite loop, this is an invalid state, should not happen
+        return false;
+    }
+    PinRecord tailPrev = {};
+    if (!readData(tail.prevId, tailPrev) || tailPrev.pinId != tail.prevId) {
+        return false;
+    }
+    if (tailPrev.nextId == LAST_KEY) {      // no interrupted insert, everything is fine
+        return true;
+    }   
+
+//    PinRecord lastReachable = {};
+    PinRecord newRec = {};    
+//    if (!findLastReachableFromHead(lastReachable)) {
+//        return false;
+//    }
+
+    if (!readData(tailPrev.nextId, newRec)) {  // after 1st step of insert ... rollback to last reachable record
+//        if (!findLastReachableFromHead(lastReachable)) {
+//            return false;
+//        }
+        Serial.printf("[PinStore] GC: rolled back interrupted insert, tailPrev.nextId=%u\n",
+                      tailPrev.nextId);
+        tailPrev.nextId = LAST_KEY;
+        writeData(tailPrev);
+    } else {
+        Serial.printf("[PinStore] GC: found interrupted insert, tailPrev.nextId=%u\n", tailPrev.nextId);
+        if ( !isStoredPinValid(newRec) || newRec.nextId != LAST_KEY || newRec.prevId != tailPrev.pinId) {
+            return false;
+        }
+        tail.prevId = newRec.pinId;
+        tailPrev.nextId = newRec.pinId + 1;
+        writeData(tail);
+    }
+    return true;
+} // repairTailInsert
+
+bool PinStorage::repairDeleteGap(const PinRecord& prevRec, PinRecord& nextRec) {
+    uint32_t deletedId = nextRec.prevId;
+    if (!isRealPinId(deletedId) || deletedId == prevRec.pinId || deletedId == nextRec.pinId) {
+        Serial.println("[PinStore] GC: tangled chain, resetting pin pool");
+        return false;
+    }
+
+    PinRecord deleted = {};
+    if (readData(deletedId, deleted)) {
+        if (deleted.pinId != deletedId
+            || deleted.prevId != prevRec.pinId
+            || deleted.nextId != nextRec.pinId
+            || !isStoredPinValid(deleted)) {
+                Serial.printf("[PinStore] GC: corrupted delete record pinId=%u, resetting pin pool\n", deletedId);
+            return false;
+        }
+        char key[ID_LENGTH + 1];
+        pinKey(deletedId, key);
+        prefs.remove(key);
+        Serial.printf("[PinStore] GC: removed interrupted delete record pinId=%u\n",
+                      deletedId);
+    } else {
+        Serial.printf("[PinStore] GC: completed interrupted delete after removed pinId=%u\n",
+                      deletedId);
+    }
+
+    nextRec.prevId = prevRec.pinId;
+    writeData(nextRec);
+    return true;
+} // repairDeleteGap
+
+bool PinStorage::repairInterruptedDelete() {
+    PinRecord current = {};
+    if (!readData(FIRST_KEY, current) || current.pinId != FIRST_KEY) {
+        return false;
+    } 
+
+    for (uint32_t steps = 0; steps < PIN_GC_MAX_SCAN_ID; steps++) {
+        if (current.nextId == FIRST_KEY || current.nextId == current.pinId) {
+            return false;
+        }
+        PinRecord next = {};
+        if (!readData(current.nextId, next) || next.pinId != current.nextId) {
+            return false;
+        }
+        if (isRealPinId(next.pinId) && !isStoredPinValid(next)) {
+            return false;
+        }
+        if (next.prevId != current.pinId) {
+            if (!repairDeleteGap(current, next)) {
+                return false;
+            }
+        }
+        if (next.pinId == LAST_KEY) {
+            return true;
+        }
+        current = next;
+    }
+
+    return false;
+} // repairInterruptedDelete
+
+bool PinStorage::repairPinChain() {
+    PinRecord current = {};
+    PinRecord tail = {};
+    PinRecord next = {};
+    PinRecord deleted = {};
+    if (!readData(LAST_KEY, tail) || tail.pinId != LAST_KEY) {                    //tail present?
+        return false;
+    } 
+
+    if (!readData(FIRST_KEY, current) || current.pinId != FIRST_KEY) {              //head present?
+        return false;
+    } 
+
+    for (uint32_t steps = 0; steps < PIN_GC_MAX_SCAN_ID; steps++) {
+        Serial.printf ( "[PinStore] GC: traversing chain, current pinId=%u, nextId=%u\n", current.pinId, current.nextId);
+        if (current.nextId == FIRST_KEY || current.nextId == current.pinId) {
+            return false;
+        }
+        if (!readData(current.nextId, next) ){
+            if (current.pinId == tail.prevId ) {                                    // interrupted insert in step 1, roll back it
+                current.nextId = LAST_KEY;
+                writeData(current);
+                Serial.println("[PinStore] GC: rolled back broken insert");
+                return true;
+            } else {                                                                // severely damaged chain, cannot repair
+                Serial.println("[PinStore] GC: interrupted chain, resetting pin pool");
+                return false;
+            }
+        }
+        if( next.pinId != current.nextId) {
+            Serial.println("[PinStore] GC: unexpected ID in chain, resetting pin pool");
+            return false;
+        }
+        if (isRealPinId(next.pinId) && !isStoredPinValid(next)) {
+            Serial.println("[PinStore] GC: dubious record in chain, resetting pin pool");
+            return false;
+        }
+        if (next.prevId != current.pinId) {
+            if (next.prevId == current.prevId) {                                    // interrupted insert in step 2, complete it
+                if (next.pinId == LAST_KEY) {
+                    Serial.printf("[PinStore] GC: redoing unfinished insert, pinId %u\n", current.pinId);
+                    tail.prevId = current.pinId;
+                    tail.nextId = current.pinId + 1;
+                    writeData(tail);
+                    return true;
+                }
+            } 
+            if (readData(next.prevId, deleted) && next.prevId == deleted.pinId) {    // interrupted delete in step 1, complete it
+                char key[ID_LENGTH + 1];
+                pinKey(deleted.pinId, key);
+                prefs.remove(key);
+                Serial.printf("[PinStore] GC: removed interrupted delete record pinId=%u\n", deleted.pinId);
+            }
+            if (!readData(next.prevId, deleted)) {                                      // interrupted delete in step 2, complete it
+                next.prevId = current.pinId;
+                writeData(next);
+                Serial.println("[PinStore] GC: completed interrupted delete");
+                return true;
+            }
+            Serial.println("[PinStore] GC: broken chain, resetting pin pool");
+            return false;
+            if (!repairDeleteGap(current, next)) {
+                return false;
+            }
+        }
+        if (next.pinId == LAST_KEY) {
+            return true;
+        }
+        current = next;
+    }
+    Serial.printf("[PinStore] GC: unable to traverse chain, resetting pool, last deleted pinId=%u\n", current.pinId);
+    return false;
+} // repairPinChain
+
 
 void PinStorage::garbageCollect()
-{  
-    // TODO: implement garbage collect
+{
+    if (!ensurePool()) {
+        return;
+    }
+    if (!repairPinChain()) {
+        Serial.println("[PinStore] GC: unrecoverable chain state, resetting pin pool");
+        resetPool();
+
+    }
+
+//    if (!repairTailInsert()) {
+//        Serial.println("[PinStore] GC: unrecoverable tail insert state, resetting pin pool");
+//        resetPool();
+//        return;
+//    }
+
+//    if (!repairInterruptedDelete()) {
+//        Serial.println("[PinStore] GC: unrecoverable chain state, resetting pin pool");
+//        resetPool();
+//        return;
+//    }
+    Serial.println("[PinStore] GC: completed");
 }

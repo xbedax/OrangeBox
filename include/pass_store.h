@@ -10,7 +10,7 @@
 #define FIRST_KEY_KEY "00000000"
 #define LAST_KEY (0xffffffffU)
 #define LAST_KEY_KEY "FFFFFFFF"
-#define ID_LENGTH sizeof(uint32_t)
+#define ID_LENGTH 8
 #define MAX_PIN_LENGTH 8
 #define MAX_NAME_LENGTH 10
 #define MIN_PIN_LENGTH 6
@@ -47,11 +47,14 @@ public:
     void garbageCollect();
     uint8_t usePin(const char* pinValue);
     uint32_t removePin(const CacheRecord& rec);
+#ifdef BOX_SIMULATION
+    const std::vector<CacheRecord>& debugCache() const;
+#endif
 
 private:
     Preferences prefs;
     std::vector<CacheRecord> pinsCache;
-    uint32_t maxPinId;
+    uint32_t maxPinId = 0;
     uint32_t nextPinId = 1;
     bool rebuildCache();
     bool verifyLocalChain(uint32_t pinId);
@@ -60,6 +63,15 @@ private:
     bool readData(uint32_t id, PinRecord& rec);
     bool update(const CacheRecord& rec);
     bool isActive(const PinRecord& rec);
+    bool ensurePool();
+    void resetPool();
+    bool writeData(const PinRecord& rec);
+    bool isStoredPinValid(const PinRecord& rec);
+    //bool findLastReachableFromHead(PinRecord& lastRec);
+    bool repairTailInsert();
+    bool repairPinChain();
+    bool repairInterruptedDelete();
+    bool repairDeleteGap(const PinRecord& prevRec, PinRecord& nextRec);
     
 
 };
