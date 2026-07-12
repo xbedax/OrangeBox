@@ -2,21 +2,22 @@
 #include <ArduinoJson.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <functional>
 
-// AsyncWebSocket* ws->("/ws");
+AsyncWebSocket wss("/");
  
-AsyncWebSocket* ws = new AsyncWebSocket("/ws");
-AsyncWebServer *server; 
+//AsyncWebSocket* ws = new AsyncWebSocket("/ws");
+//AsyncWebServer *server; 
 
-using JsonObj = JsonObjectConst;
-typedef void (*CommandHandler)(AsyncWebSocketClient* client, JsonObj data);
-
+//using JsonObj = JsonObjectConst;
+//typedef void (*CommandHandler)(AsyncWebSocketClient* client, JsonObj data);
+//using CommandHandler = std::function<void(AsyncWebSocketClient* client, JsonObj data)>;
 /*struct MyCommandEntry {
     const char* name;
     MyCommandHandler handler;
 };
 */
-CommandEntry commands[] = {};
+CommandEntry commands[CMD_COUNT] = {};
 
 
 void WebSocketManager::notifyClients(const char* command, JsonDocument payload) {
@@ -65,10 +66,13 @@ void WebSocketManager::handleWebSocketMessage(AsyncWebSocketClient *sender, void
             return;
         }
         const char* commandReceived = request["_command_"];
+        if(0 != strcmp(commandReceived, "_pong_")) { Serial.printf(" .. Received command: %s\n", commandReceived);   }  //###
+           //###
         JsonObj data = request["data"].as<JsonObj>();
-        const size_t CMD_COUNT = sizeof(commands)/sizeof(commands[0]);
+        //const size_t CMD_COUNT = sizeof(commands)/sizeof(commands[0]);
         for (size_t i = 0; i < CMD_COUNT; i++) {
-            if (strcmp(commandReceived, commands[i].name) == 0) {
+            if (commands[i].handler && strcmp(commandReceived, commands[i].name) == 0) {
+                if(0 != strcmp(commandReceived, "_pong_")) { Serial.printf(" .. Found handler for command: %s\n", commandReceived);   }  //###
                 if (commands[i].handler) {
                     commands[i].handler(sender, data);
                 }
@@ -77,7 +81,6 @@ void WebSocketManager::handleWebSocketMessage(AsyncWebSocketClient *sender, void
         }
     }
   Serial.println("Received message with unknown command");
-  
 }
 
 void WebSocketManager::onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
@@ -98,6 +101,21 @@ void WebSocketManager::onEvent(AsyncWebSocket *server, AsyncWebSocketClient *cli
     case WS_EVT_ERROR:
       break;
   }
+}
+
+void WebSocketManager::update(unsigned long currentMillis) {
+  if (currentMillis > nextWatchdogFeedTime) {
+    nextWatchdogFeedTime = currentMillis + watchdogFeedInterval;
+    watchdogSendRequest();
+    cleanupConnections();
+  }
+}
+
+void WebSocketManager::watchdogSendRequest() {
+  JsonDocument payload;
+  payload["ping_data"] = "ping";
+  notifyClients(COMM_WATCHDOG_PING, payload);
+//  Serial.println("Sent watchdog ping to all clients"); // ###
 }
 
 void WebSocketManager::watchdogRemoveEntry(AsyncWebSocketClient* client) {
@@ -124,7 +142,7 @@ void WebSocketManager::watchdogRemoveEntryIdx(int clientIdx) {
     fidx++;
   }
   freeWatchdogEntry--;
-}
+} // WatchdogRemoveEntryIdx
 
 void WebSocketManager::handleWatchdogResponse(AsyncWebSocketClient* client, JsonObj data) {
     int cidx;
@@ -142,7 +160,7 @@ void WebSocketManager::handleWatchdogResponse(AsyncWebSocketClient* client, Json
   } else {
     Serial.println("Watchdog entry limit reached, cannot track new client");
   } 
-} 
+} // handleWatchdogResponse
 
 void WebSocketManager::cleanupConnections() {
   unsigned long currentTime = millis();
@@ -157,10 +175,22 @@ void WebSocketManager::cleanupConnections() {
 
 void WebSocketManager::initializeWebSocket(AsyncWebServer *srv) {
   server = srv;
+  ws = &wss;
+//  ws->onEvent([this](AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
+//                      void *arg, uint8_t *data, size_t len) {
+//    this->onEvent(server, client, type, arg, data, len);
+//  });
   ws->onEvent([this](AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
                       void *arg, uint8_t *data, size_t len) {
     this->onEvent(server, client, type, arg, data, len);
   });
   server->addHandler(ws);
+  for (size_t i = 0; i < CMD_COUNT; i++) {
+    commands[i].name = nullptr;
+    commands[i].handler = nullptr;
+  } 
+  registerMessageHandler(COMM_WATCHDOG_PONG, [this](AsyncWebSocketClient* client, JsonObj data) {
+    this->handleWatchdogResponse(client, data);
+  });
 }
 

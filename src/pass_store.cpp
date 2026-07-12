@@ -192,7 +192,7 @@ uint32_t PinStorage::removePin(const CacheRecord& rec) {
     }
 
     return rec.pinId;
-}
+} // removePin
 
 size_t PinStorage::getPins(uint8_t firstPinId, uint8_t numPins, String &pinsTable)
 {
@@ -208,7 +208,7 @@ size_t PinStorage::getPins(uint8_t firstPinId, uint8_t numPins, String &pinsTabl
         }
     }
     return pinsCache.size();
-}
+} // getPins
 
 /*
 --------------internal functions-------------------------
@@ -288,7 +288,8 @@ uint32_t PinStorage::writePin(const PinRecord &pinIn)
     char recKey[ID_LENGTH + 1];
     char prevKey[ID_LENGTH + 1];
 
-
+    Serial.printf("[PinStore] writePin: pinId=%u, name=%s, pin=%s, doorNum=%u, validFrom=%llu, validTo=%llu, remaining=%d\n",
+                  pin.pinId, pin.name, pin.pin, pin.doorNum, pin.validFrom, pin.validTo, pin.remaining); // ###
     if (pinIn.pinId == 0 || !readData(pinIn.pinId, storedpin)) {   // not found, create new record
         if (prefs.getBytes(LAST_KEY_KEY, &lastpin, sizeof(lastpin)) != sizeof(lastpin)) {
             Serial.println("[PinStore] writePin: failed to read last record");
@@ -309,7 +310,15 @@ uint32_t PinStorage::writePin(const PinRecord &pinIn)
         prefs.putBytes(recKey, &pin, sizeof(pin));
         lastpin.nextId = lastpin.nextId + 1;
         lastpin.prevId = pin.pinId;
-        prefs.putBytes(LAST_KEY_KEY, &lastpin, sizeof(lastpin));
+        int written =  prefs.putBytes(LAST_KEY_KEY, &lastpin, sizeof(lastpin));
+         if (written == 0 ) {
+            Serial.printf("[PinStore] update: failed to write pinId=%u\n", pin.pinId); 
+            return 0;
+        } else  {
+            Serial.printf("[PinStore] update: partial write for pinId=%u, written=%d\n  (of %d)", pin.pinId, written, sizeof(pin)); //###
+            
+        }
+
     } else {                                            // found, update data   
         if (!verifyLocalChain(pin.pinId)) {
             Serial.printf("[PinStore] update: pinId=%u not properly chained\n", pin.pinId);
@@ -317,7 +326,14 @@ uint32_t PinStorage::writePin(const PinRecord &pinIn)
         }
  
         pinKey(pin.pinId, recKey);
-        prefs.putBytes(recKey, &pin, sizeof(pin));
+        int written = prefs.putBytes(recKey, &pin, sizeof(pin));    
+        if (written == 0 ) {
+            Serial.printf("[PinStore] update: failed to write pinId=%u\n", pin.pinId); 
+            return 0;
+        } else  {
+            Serial.printf("[PinStore] update: partial write for pinId=%u, written=%d\n  (of %d)", pin.pinId, written, sizeof(pin)); //###
+            
+        }
     }
     return pin.pinId;
 } //writePin

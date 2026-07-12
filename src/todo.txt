@@ -1,0 +1,22 @@
+
+Pin rows update
+---------------
+When implemented pin table paging, it si necessary to implement pin update notification too. The controller should issue pin update notification to all clientsl. The client will subsequently request pin table update if necessary.
+
+Flexi door
+----------
+UI should be able to retrieve map of BOX doors, provide a mechanism to combine doors into logical one, delete logical door confuguration  and to dosplay current door configuration.
+Controller has to store current door configuration in NVS / preferences.
+
+ Pin door number
+ ---------------
+
+ If the box has more than one door, PIN record has to contain the number of door associated. If PIN is associated with logical door, it should be deleted when the corresponding logical door configuration is dropped
+
+ UI - presence code
+ ---------------------------
+  Open box modal should collect and send presence code, box has to werify it prior door opening
+
+  Door cut off
+  ------------
+  When door are detected as open, controller should cut off lock solenoid power immeditaly

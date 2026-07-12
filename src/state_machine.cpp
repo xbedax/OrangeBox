@@ -36,6 +36,7 @@ void BoxStateMachine::initialize() {
     context.displayActionMillis = 0;
     context.currentPasswordEntryMillis = 0;
     context.currentBadPasswordMillis = 0;
+
     memset(context.presenceCode, 0, sizeof(context.presenceCode));
     onEnterHome(currentMillis);
     scheduleNextDisplayRefresh(currentMillis);

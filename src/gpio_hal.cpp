@@ -36,6 +36,7 @@ uint8_t GpioHAL::openDoor(uint8_t doorNum) {
 uint8_t GpioHAL::readDoorState(uint8_t doorNum) {
                                                                 //  Combination doors have a number greater then number of physical doors, so we need to check the mapping for the logDoorNum rather than the index, and then check all doors that match the logDoorNum for their state. If all matching doors are in the same state, return that state, otherwise return mixed state. For example, if we have a combination of two adjacent doors operated together, they would share the same logDoorNum in the mapping, and we would check both of their state pins to determine the overall state of the combination.
   uint8_t doorState = DOOR_UNKNOWN;                            // Neutral door state at the beginning, will be set to open or closed based on the first door we check, and if we find any door with a different state, we will return mixed state
+  Serial.println("Reading state for logical door number: " + String(doorNum)); //###
   for (uint8_t i = 0; i < activeDoorNum; i++) {
     if (doorMappings[i].logDoorNum == doorNum && doorMappings[i].statePin != INVALID_PIN) { // Check if the door mapping matches the requested logical door number and has a valid state pin
       uint8_t readState = digitalRead(doorMappings[i].statePin);
@@ -196,6 +197,7 @@ void GpioHAL::initializeGpioHAL(TimerManager* timerManager, DoorMapping* initial
       doorMappings[i].lastState = false; // Default to closed
     }
   }
+  Serial.println("GPIO HAL loaded " + String(activeDoorNum) + " active doors:"); //###
   this->timerManager = timerManager;
   this->ambientPin = ambientPin;
   if (this->ambientPin != INVALID_PIN) {
@@ -206,9 +208,12 @@ void GpioHAL::initializeGpioHAL(TimerManager* timerManager, DoorMapping* initial
   { 
     if (doorMappings[i].statePin != INVALID_PIN) { // If the state pin is valid, read the initial state of the door and store it in the mapping for change detection and door state requests speedup, so we don't have to read the pin again if we already know the state from the last read
       doorMappings[i].lastState = digitalRead(doorMappings[i].statePin); // Initialize last known state for change detection
+    } else {
+      doorMappings[i].lastState = false; // Default to closed if state pin is invalid
     }
+    Serial.print("Door " + String(i) + " (LogDoorNum: " + String(doorMappings[i].logDoorNum) + ") - State Pin: " + String(doorMappings[i].statePin) + ", Last State: " + String(doorMappings[i].lastState)); //###
   } 
-  Serial.println("GPIO HAL initialized with current door states:");
+  
   for (size_t i = 0; i < activeDoorNum; i++)
   { 
     if (doorMappings[i].statePin != INVALID_PIN) { // If the state pin is valid, attach interrupt for change detection

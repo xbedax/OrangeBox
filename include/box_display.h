@@ -3,6 +3,7 @@
 #include "config.h"
 #include <Arduino.h>
 #include "gpio_hal.h"
+//#include <LCDI2C_Multilingual.h>
 
 #ifdef DISP_OLED
 #include <Adafruit_GFX.h>
@@ -89,12 +90,12 @@
 #define AMBIENT_STATUS_ON             'A'         // Ambient light on
 #define AMBIENT_STATUS_OFF            '.'         // Ambient light off
 
+//display libraries - lcdI2C
 #ifdef DISP_LCD
-#define LCD_ADDRESS 0x2
-//display libraries - lcdI2C/
-#define LCD_WIDTH 20
-#define LCD_HEIGHT 4
-#define DISP_WIDTH LCD_WIDTH
+#define LCD_ADDRESS                 0x27
+#define LCD_WIDTH                   20
+#define LCD_HEIGHT                  4
+#define DISP_WIDTH                  LCD_WIDTH
 #define DISP_DOOR_COUNT  (LCD_WIDTH - (STIDX_MAX + 3))/2  // number of characters available for door status display, adjust as needed, but make sure to update the status line layout in the display accordingly
 
 #endif
@@ -158,6 +159,9 @@ int8_t nextPasswordWait;                    // Time to wait for the next passwor
 String centerLine(String text);
 // Elements of display interface manipulations
 GpioHAL *gpioHAL; // Pointer to the GPIO HAL instance, used for getting door status for display purposes
+#ifdef DISP_LCD
+//LCDI2C_Latin lcd1{LCD_ADDRESS, LCD_WIDTH, LCD_HEIGHT};
+#endif
 
 
 };

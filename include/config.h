@@ -1,4 +1,5 @@
 #define _VERSION_ "1.01.a"
+#include "credentials.h"
 
 
 /*-----------------------*/
@@ -20,11 +21,10 @@
 /*-----------------*/
 /* Door mappings */
 /*-----------------*/
-
-#define INITIAL_DOOR_MAPPING  {  {1, 0, 5, 0, 0},  \
-                                 {2, 1, 6, 0, 0},  \
-                                 {3, 2, 7, 0, 0},  \
-                                 {4, 3, 12, 0, 0} }
+// Logical Door Number, lock GPIO pin, door state pin, extender Number, last State
+#define ACTIVE_DOOR_NUMBERS  1                          // Number of active doors, has to correspond with INITIAL_DOOR_MAPPING
+#define INITIAL_DOOR_MAPPING  {  {0, 0, 3, 0, 0}  \
+                                                  }
 #define AMBIENT_PIN 11
 
 /*-----------------*/
@@ -57,7 +57,7 @@
 #define LINK_CHECK_INTERVAL 3000
 
 // Wifi connection settings
-
+// Valid values for WIFI_SSID and WIFI_PASSWD should be provided in the build environment or in a separate configuration file. If not defined, default values will be used.
 #define BOX_HOST_NAME "BOX-007"
 #ifndef WIFI_SSID
 #define WIFI_SSID "someSSID"
@@ -81,20 +81,23 @@
 /*-----------------*/
 
 // Command strings for WebSocket communication
+#define CMD_COUNT 12
 #define COMM_GET_DOOR_STATE "get_door"
-#define COMM_WATCHDOG "watchdog"
+#define COMM_WATCHDOG_PING "_ping_"
+#define COMM_WATCHDOG_PONG "_pong_"
 #define COMM_SET_PIN "set_pin"
-#define COMM_PIN_DELETE "pinDelete"
 #define COMM_GET_AMBIENT "get_ambient"
 #define COMM_GET_PINS "get_pins"
 #define COMM_GET_PIN_INFO "get_PinInfo"
 #define COMM_OPEN_BOX "opendoor"
 #define COMM_VISIBILITY "c_visibility"
 #define COMM_CONTENT "c_content"
+#define COMM_GET_PAGER "get_pager"
 
 #define DEFAULT_MAX_WS_CLIENTS 15
 #define WATCHDOG_INTERVAL 10000
 #define WATCHDOG_TIMEOUT 30000 
+#define WEBSOCKET_UPDATE_INTERVAL (WATCHDOG_INTERVAL / 4)
 
 
 // Html beacons
@@ -115,5 +118,27 @@
 #define DATE_TO_UNLIMITED 2147483647            // Timestamp for 2030-12-31, used to represent unlimited validity for pins
 #define DATE_FROM_UNLIMITED 1735689600          // Timestamp for 2025-01-01, used to represent unlimited validity for pins
 
+// Message strings for WebSocket communication
 
+#define MSG_PINID "pinid"
+#define MSG_PINNAME "pinname"
+#define MSG_PINVALUE "pinvalue"
+#define MSG_PINVALIDFROM "datefrom"
+#define MSG_PINVALIDTO "dateto"
+#define MSG_PINUNLIMITED "checkbox-unlimited"
+#define MSG_DOORNUM "doornum"
+#define MSG_REMAINING "amount"
+#define MSG_LASTRESULT "lastresult"
+#define MSG_AMBIENTSTATE "ambient_state"
 
+/*--------------------*/
+/* Technical settings */
+/*--------------------*/
+
+// Logging settings
+#define SEVERITY_BUSSINESS      1
+#define SEVERITY_INFO           2
+#define SEVERITY_ERROR          3
+#define SEVERITY_WARNING        4
+#define SEVERITY_DEBUG          5
+#define LOGPRINT_SEVERITY_LEVEL SEVERITY_DEBUG

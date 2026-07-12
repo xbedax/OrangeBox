@@ -7,7 +7,7 @@
 
 #ifdef DISP_LCD
 #include <LCDI2C_Multilingual.h>
-LCDI2C_Latin lcd1(LCD_ADDRESS, LCD_WIDTH, LCD_HEIGHT);  // I2C address: 0x27; LCD = Surenoo SLC2004A (EU / Latin)
+static LCDI2C_Latin lcd1(LCD_ADDRESS, LCD_WIDTH, LCD_HEIGHT);  // I2C address: 0x27; LCD = Surenoo SLC2004A (EU / Latin)
 #endif
 
 #ifdef DISP_OLED
@@ -16,6 +16,7 @@ String logRows[OLEDROWS];
 #endif
 
 extern const char* fversion;
+
 
 String BoxDisplay::centerLine(String text) {
   uint8_t paddLen = 0;
@@ -282,7 +283,7 @@ void BoxDisplay::setProgressBar (uint8_t expirationProgress) {
 void BoxDisplay::displayInit(GpioHAL* gpioHal) {
     gpioHAL = gpioHal; // Store the pointer to the GPIO HAL for later use in display updates
 
-    #ifdef DISP_OLED
+#ifdef DISP_OLED
 //  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS);
   display.begin(SH1106_SWITCHCAPVCC, OLED_ADDRESS);
   display.clearDisplay();
@@ -292,10 +293,11 @@ void BoxDisplay::displayInit(GpioHAL* gpioHal) {
   display.setCursor(0, 0);
 #endif
 #ifdef DISP_LCD
+  Serial.println("Initializing LCD display...");
   lcd1.init();
   lcd1.backlight();
-  lcd1.setCursor(0, 0);
-  lcd1.print(centerLine("OrangeBOX " + String(fversion)));
+  lcd1.setCursor(0, 1);
+  lcd1.println("OrangeBOX");
 #endif
 }
 

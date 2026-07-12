@@ -10,12 +10,13 @@
 
 // Type aliases
 using JsonObj = JsonObjectConst;
-typedef void (*CommandHandler)(AsyncWebSocketClient* client, JsonObj data);
+//typedef void (*CommandHandler)(AsyncWebSocketClient* client, JsonObj data);
+using CommandHandler = std::function<void(AsyncWebSocketClient* client, JsonObj data)>;
 
 // Command entry structure for registering message handlers
 struct CommandEntry {
     const char* name;
-    CommandHandler handler;
+    std::function<void(AsyncWebSocketClient* client, JsonObj data)> handler;
 };
 
 struct watchDogEntry {
@@ -30,11 +31,8 @@ class WebSocketManager {
     public:
 // Function declarations
 
-    /**
-     * Initialize the WebSocket server
-     * @param srv Pointer to the AsyncWebServer instance
-     * @return 0 on success, -1 on failure
-     */
+    
+    // Initialize the WebSocket server
     void initializeWebSocket(AsyncWebServer *srv);
 
     /**
@@ -79,25 +77,23 @@ class WebSocketManager {
     void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
                 void *arg, uint8_t *data, size_t len);
 
-    /**
-     * Removes timed out clients from the WebSocket server
-     */
-    
-    void cleanupConnections(); // Function to check for timed-out clients and clean up connections
+    void update(unsigned long currentMillis); // Function to be called in the main loop for periodic updates
 
     private:
     watchDogEntry watchDogEntries[DEFAULT_MAX_WS_CLIENTS]; // Track last pong time for each client for watchdog purposes
-    int freeWatchdogEntry = 0;  // to speeedup cleints lookup
-    
-    void handleWatchdogResponse(AsyncWebSocketClient* client, JsonObj data); // Handler for watchdog response
-    void watchdogRemoveEntryIdx(int clientIdx);                             // Function to feed the watchdog timer, if needed
-    void watchdogRemoveEntry(AsyncWebSocketClient* client);                   // Function to remove a client from the watchdog tracking
-    
-    AsyncWebSocket* ws;
-    AsyncWebServer* server;
-    unsigned long nextWatchdogFeedTime;
-    const unsigned long watchdogFeedInterval = WATCHDOG_INTERVAL; // Feed watchdog every 10 seconds
-    const unsigned long watchdogTimeout = WATCHDOG_TIMEOUT; // Consider client disconnected if no pong received in 30 seconds
+    int freeWatchdogEntry = 0;                                                  // to speeedup clients lookup
+    void watchdogSendRequest();                                                 // Function to send a ping request to all clients
+    void cleanupConnections();                                                  // Function to check for timed-out clients and clean up connections
+    void handleWatchdogResponse(AsyncWebSocketClient* client, JsonObj data);    // Handler for watchdog response
+    void watchdogRemoveEntryIdx(int clientIdx);                                 // Function to feed the watchdog timer, if needed
+    void watchdogRemoveEntry(AsyncWebSocketClient* client);                     // Function to remove a client from the watchdog tracking
+
+    AsyncWebSocket* ws;                                                         // WebSocket server instance
+    std::list<CommandEntry> commandHandlers;                                    // List of registered command handlers
+    AsyncWebServer* server;                                                     // Pointer to the AsyncWebServer instance
+    unsigned long nextWatchdogFeedTime;                                         // Next time to send a ping request to clients for watchdog purposes
+    const unsigned long watchdogFeedInterval = WATCHDOG_INTERVAL;               // Feed watchdog every 10 seconds
+    const unsigned long watchdogTimeout = WATCHDOG_TIMEOUT;                     // Consider client disconnected if no pong received in 30 seconds
 
 };
 
