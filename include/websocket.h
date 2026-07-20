@@ -31,7 +31,8 @@ class WebSocketManager {
     public:
 // Function declarations
 
-    
+
+
     // Initialize the WebSocket server
     void initializeWebSocket(AsyncWebServer *srv);
 
@@ -78,6 +79,7 @@ class WebSocketManager {
                 void *arg, uint8_t *data, size_t len);
 
     void update(unsigned long currentMillis); // Function to be called in the main loop for periodic updates
+    uint8_t getClientCount() const; // Function to get the current number of connected clients
 
     private:
     watchDogEntry watchDogEntries[DEFAULT_MAX_WS_CLIENTS]; // Track last pong time for each client for watchdog purposes

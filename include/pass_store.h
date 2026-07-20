@@ -43,7 +43,7 @@ public:
     bool begin();
     uint32_t addPin(const CacheRecord &pin);
     bool updatePin(const CacheRecord &pin);
-    size_t getPins(uint8_t firstPinId, uint8_t lastPinId, String &pinsTable);
+    size_t getPins(uint32_t firstPinId, uint32_t numPins, String &pinsTable);
     void garbageCollect();
     uint8_t usePin(const char* pinValue);
     uint32_t removePin(const CacheRecord& rec);

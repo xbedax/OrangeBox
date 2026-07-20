@@ -29,7 +29,7 @@ uint8_t GpioHAL::openDoor(uint8_t doorNum) {
     timerManager->scheduleOnce(DOOR_DELAY, LOCK_DEACTIVATE, String(doorNum).c_str());
     return doorNum; // Return the door number that was attempted to be opened
   }
-  return 0; // Return 0 if no door with the specified number was found
+  return DOOR_UNKNOWN; // Return 255 if no door with the specified number was found
 } // openDoor
 
 // Read the state of a (logical) door
@@ -74,7 +74,7 @@ uint8_t GpioHAL::getLogDoorMapping(uint8_t index) {
   if (index < activeDoorNum) {
     return doorMappings[index].logDoorNum;
   }
-  return 0; // Invalid index
+  return DOOR_UNKNOWN; // Invalid index
 } // getLogDoorMapping  
 
 // GPIO interrupt callback for door state changes -> plans notification of all clients about the change, ideally with the new state of the door, but at least with the information that something changed and clients should update their state by requesting it from the server
@@ -104,7 +104,7 @@ uint8_t GpioHAL::lockDeactivate(uint8_t doorNum) {
   }
   if (!lockDeactivated) {
     Serial.println("Error: Invalid door number in lockDeactivate: " + String(doorNum));
-    return 0;
+    return DOOR_UNKNOWN; // Return 255 if no door with the specified number was found
   } 
   return doorNum; // Return the door number that was attempted to be deactivated
 } // lockDeactivate

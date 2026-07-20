@@ -9,7 +9,7 @@
 #define DOOR_DELAY 500         // Duration of the pulse to open the door (ms)
 #define DOOR_OPENING_TIMEOUT  1000
 
-#define DOOR_UNKNOWN 0
+#define DOOR_UNKNOWN 255
 #define DOOR_OPEN 1
 #define DOOR_CLOSED 2
 #define DOOR_MIXED 3            // For combinations of doors, e.g. adjacent doors operated together

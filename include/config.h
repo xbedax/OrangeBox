@@ -93,6 +93,8 @@
 #define COMM_VISIBILITY "c_visibility"
 #define COMM_CONTENT "c_content"
 #define COMM_GET_PAGER "get_pager"
+#define COMM_ENORDIS "c_enordis"
+
 
 #define DEFAULT_MAX_WS_CLIENTS 15
 #define WATCHDOG_INTERVAL 10000
@@ -111,6 +113,7 @@
 #define DOOR_OPEN_BEACON "door_state_open"
 #define DOOR_CLOSED_BEACON "door_state_closed"
 #define DOOR_MIXED_BEACON "door_state_mixed"
+#define DOOR_CONTROLS_BEACON "door_controls"
 
 #define STATE_NEGATIVE "no"
 #define STATE_POSITIVE "yes"
@@ -130,6 +133,10 @@
 #define MSG_REMAINING "amount"
 #define MSG_LASTRESULT "lastresult"
 #define MSG_AMBIENTSTATE "ambient_state"
+#define MSG_PRESENCECODE "presence"
+#define MSG_CHECKPRESENCE "checkbox-presence"
+#define MSG_DISABLE "disable"
+#define MSG_ENABLE "enable"
 
 /*--------------------*/
 /* Technical settings */

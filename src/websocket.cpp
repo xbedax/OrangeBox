@@ -2,7 +2,10 @@
 #include <ArduinoJson.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <time.h>
 #include <functional>
+#include "logger.h"
+
 
 AsyncWebSocket wss("/");
  
@@ -23,17 +26,21 @@ CommandEntry commands[CMD_COUNT] = {};
 void WebSocketManager::notifyClients(const char* command, JsonDocument payload) {
   JsonDocument doc;
   doc["_command_"] = command;  
-  doc["timestamp"] = millis();
+  doc["_timestamp_"] = static_cast<long long>(time(nullptr));
   doc["data"] = payload;
   String changeString;
   serializeJson(doc, changeString);
   ws->textAll(changeString);
 }
 
+uint8_t WebSocketManager::getClientCount() const {
+    return ws->count();
+} 
+
 void WebSocketManager::sendMessage(AsyncWebSocketClient* client, const char* command, JsonDocument payload) {
   JsonDocument doc;
   doc["_command_"] = command;
-  doc["timestamp"] = millis();
+  doc["_timestamp_"] = static_cast<long long>(time(nullptr));
   doc["data"] = payload;
   String changeString;
   serializeJson(doc, changeString);
@@ -108,6 +115,7 @@ void WebSocketManager::update(unsigned long currentMillis) {
     nextWatchdogFeedTime = currentMillis + watchdogFeedInterval;
     watchdogSendRequest();
     cleanupConnections();
+
   }
 }
 

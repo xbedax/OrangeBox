@@ -4,6 +4,9 @@
 #include <Arduino.h>
 #include "config.h"
 
+#define UI_DISABLE_DOOR_CONTROLS 1
+#define UI_ENABLE_DOOR_CONTROLS 2
+
 /*
  * BoxState - Enumeration of all possible states in the box state machine
  */
@@ -119,13 +122,16 @@ public:
     
     // Callback registration for state transition notifications
     typedef void (*StateChangeCallback)(BoxState oldState, BoxState newState, unsigned long currentMillis);
+    typedef void (*UIUpdateCallback)(uint8_t action);
     void setStateChangeCallback(StateChangeCallback callback);
+    void setUIUpdateCallback(UIUpdateCallback callback) { onUIUpdate = callback; }
     
 private:
     BoxStateContext context;
     
     // Callback
     StateChangeCallback onStateChange;
+    UIUpdateCallback onUIUpdate;
     
     // State transition logic
     void transitionTo(BoxState newState, unsigned long currentMillis);
@@ -168,3 +174,4 @@ private:
 
 #endif // STATE_MACHINE_H
 
+        

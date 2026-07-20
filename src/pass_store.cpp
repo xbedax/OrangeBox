@@ -2,6 +2,9 @@
 #include <Preferences.h>
 #include <vector>
 #include "pass_store.h"
+#include "logger.h"
+#include "config.h"
+#include "gpio_hal.h"
 
 /*
     PinStorage class manages a double linked list of PinRecords stored in Preferences.
@@ -123,15 +126,17 @@ uint32_t PinStorage::addPin(const CacheRecord& rec) {
 // Update pin.amount to reflect usage, return true if pin was found and updated, false otherwise
 uint8_t PinStorage::usePin(const char* pinEntered) {
     time_t now = time(nullptr);
+    logger.logPrint(SEVERITY_DEBUG, "usePin: checking pin " + String(pinEntered) + " at time " + String(now) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
     for (auto& p : pinsCache) {
+        logger.logPrint(SEVERITY_DEBUG, "usePin: checking pinId=" + String(p.pinId) + ", name=" + String(p.name) + ", pin=" + String(p.pin) + ", validFrom=" + String(p.validFrom) + ", validTo=" + String(p.validTo) + ", remaining=" + String(p.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
         if (strcmp(p.pin, pinEntered) != 0)
             continue;
         if (p.validFrom && now < p.validFrom)
-            return false;
+            return DOOR_UNKNOWN;
         if (p.validTo && now > p.validTo)
-            return false;
+            return DOOR_UNKNOWN;
         if (p.remaining == 0)
-            return false;
+            return DOOR_UNKNOWN;
         uint8_t doorNum = p.doorNum;
         if (p.remaining > 1) {
             p.remaining--;
@@ -142,8 +147,8 @@ uint8_t PinStorage::usePin(const char* pinEntered) {
         }
         return doorNum;
     }
-    return 0;
-}
+    return DOOR_UNKNOWN; // Pin not found or not valid
+} // usePin
 
 //
 uint32_t PinStorage::removePin(const CacheRecord& rec) {
@@ -194,20 +199,24 @@ uint32_t PinStorage::removePin(const CacheRecord& rec) {
     return rec.pinId;
 } // removePin
 
-size_t PinStorage::getPins(uint8_t firstPinId, uint8_t numPins, String &pinsTable)
+size_t PinStorage::getPins(uint32_t firstPinId, uint32_t numPins, String &pinsTable)
 {
     pinsTable.clear();
     //pinsTable->reserve(pinsCache.size());
+    uint32_t PinsFound = 0;
     for (const auto& rec : pinsCache) {
-        PinRecord pin;
-        pin.pinId = rec.pinId;
-        pin.prevId = 0;
-        pin.nextId = 0;
-        if (rec.pinId >= firstPinId && rec.pinId < firstPinId + numPins) {
+//        PinRecord pin;
+//        pin.pinId = rec.pinId;
+//        pin.prevId = 0;
+//        pin.nextId = 0;
+        logger.logPrint(SEVERITY_DEBUG, "getPins: checking pinId=" + String(rec.pinId) + ", name=" + String(rec.name) + ", pin=" + String(rec.pin) + ", validFrom=" + String(rec.validFrom) + ", validTo=" + String(rec.validTo) + ", remaining=" + String(rec.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+        if (rec.pinId >= firstPinId && PinsFound < numPins) {
+            PinsFound++;
+            logger.logPrint(SEVERITY_DEBUG, "getPins: adding pinId=" + String(rec.pinId) + ", name=" + String(rec.name)  + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
             pinsTable += "<tr><td>" + String(rec.pinId) + "</td><td>" + String(rec.name) + "</td><td>" + String(rec.pin) + "</td><td>" + String(rec.validFrom) + "</td><td>" + String(rec.validTo) + "</td><td>" + String(rec.remaining) + "</td></tr>";
         }
     }
-    return pinsCache.size();
+    return PinsFound;
 } // getPins
 
 /*

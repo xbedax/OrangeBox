@@ -4,6 +4,7 @@
 #include "pass_store.h"
 #include "timer.h"
 #include "config.h"
+#include "logger.h"
 #include <cstring>
 
 // Forward declarations of external objects (to be linked from main.cpp)
@@ -127,7 +128,7 @@ void BoxStateMachine::update(unsigned long currentMillis) {
 
             // Check if door opening timeout expired
             if (context.doorOpenTimeout < currentMillis && context.doorOpenTimeout != 0) {
-                boxDisplay.logPrint("Error - door " + String(context.doorToOpen) + " not opened");
+                logger.logPrint(SEVERITY_ERROR, "Error - door " + String(context.doorToOpen) + " not opened", BOX_HOST_NAME, LOGAREA_ACCESS);
                 transitionTo(BoxState::Home, currentMillis);
             }
             break;
@@ -322,7 +323,7 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
             if (event.eventType == BoxEventType::KeyboardEnter) {
                 // Validate password
                 context.doorToOpen = pinStorage.usePin(event.data.keyboardData.password);
-                if (context.doorToOpen > 0) {
+                if (context.doorToOpen != DOOR_UNKNOWN) {
                     // Valid PIN - transition to opening
                     context.badPasswordCount = 0;
                     transitionTo(BoxState::Opening, currentMillis);
@@ -460,11 +461,11 @@ void BoxStateMachine::onExitPresence() {
 void BoxStateMachine::onEnterOpening(unsigned long currentMillis) {
     disableExternal();
     boxDisplay.writeResponseLine(RESPONSELINE_OPENING);
-    if (gpioHal.openDoor(context.doorToOpen) == context.doorToOpen) {
+    if (context.doorToOpen != DOOR_UNKNOWN && gpioHal.openDoor(context.doorToOpen) == context.doorToOpen) {
         context.doorOpenTimeout = currentMillis + DOOR_OPENING_TIMEOUT;
         gpioHal.ambientOn();
     } else {
-        boxDisplay.logPrint("Error - door " + String(context.doorToOpen) + " cannot be opened");
+        logger.logPrint(SEVERITY_ERROR, "Error - door " + String(context.doorToOpen) + " cannot be opened", BOX_HOST_NAME, LOGAREA_ACCESS);
         context.doorOpenTimeout = currentMillis;
     }
 }
@@ -565,10 +566,17 @@ bool BoxStateMachine::areAllDoorsClosed() const {
     return true;
 }
 
+//
 void BoxStateMachine::enableExternal() {
     // Reserved for future websocket UI synchronization.
+    if(onUIUpdate) {
+        onUIUpdate(UI_ENABLE_DOOR_CONTROLS);
+    }
 }
 
+// Disables external commands, e.g. when the box is in a state where it should not be controlled externally (like during door opening).
 void BoxStateMachine::disableExternal() {
-    // Reserved for future websocket UI synchronization.
+    if(onUIUpdate) {
+        onUIUpdate(UI_DISABLE_DOOR_CONTROLS);
+    }
 }

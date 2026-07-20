@@ -37,6 +37,7 @@
 #include "pass_store.h"
 #include "keyboard.h"
 #include "state_machine.h"
+#include "logger.h"
 
 uint8_t doorStatePin[] = {3, 4, 5, 6};  // Door state input pins
 uint8_t doorLockPin[] = {0, 1, 2, 3};   // Door lock control pins
@@ -63,7 +64,7 @@ const int   daylightOffset_sec = DAYLIGHT_OFFSET_SEC;
 //  Overal state variables
 bool wifiState = 0;                             // actual state of WiFi connection
 bool ledState = 0;                              // actual state of door lock (0-closed,1-enganged)
-bool doorOpen = 0;                              // actual state of door switch (0-closed,1-open)
+//bool doorOpen = 0;                              // actual state of door switch (0-closed,1-open)
 JsonDocument dispChange;                        // Json Variable to Hold Sensor Readings
 unsigned long currentMillis;                    // current time timer
 unsigned long startMillis = 0;                  // push button timer
@@ -75,10 +76,10 @@ keyboardStatus keyboardState;                   // Structure to keep current key
 unsigned long statusLineTimeout = 0;            // Status line refresh control
 
 
-// Common settings
-const int ledPin = 0;
-const int doorPin = 3;
-const int doorDelay = 50;
+// Common settings      ### cele smazat
+//const int ledPin = 0;
+//const int doorPin = 3;
+//const int doorDelay = 50;
 
 // Global instances
 GpioHAL gpioHal; // GPIO hardware abstraction layer instance
@@ -93,9 +94,31 @@ BoxStateMachine boxStateMachine;
 DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
 
 //  void processPassword();         ### asi smazat
-//void boxDisplay.logPrint(String logText);
 void handleDueActions(uint8_t action, const char* arg);
 void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis);
+
+uint32_t jsonUintOr(JsonObj data, const char* key, uint32_t fallback)
+{
+  JsonVariantConst value = data[key];
+  if (value.isNull()) {
+    return fallback;
+  }
+  if (value.is<unsigned long>()) {
+    return value.as<unsigned long>();
+  }
+  if (value.is<const char*>()) {
+    const char* text = value.as<const char*>();
+    if (text == nullptr || text[0] == '\0') {
+      return fallback;
+    }
+    char* endptr = nullptr;
+    unsigned long parsed = strtoul(text, &endptr, 10);
+    if (endptr != nullptr && *endptr == '\0') {
+      return parsed;
+    }
+  }
+  return fallback;
+}
 
 // Password handling variables
 uint8_t pass[PASS_MAX];
@@ -174,11 +197,11 @@ void handleGetAmbient(AsyncWebSocketClient *sender, JsonObj data)
 {
     JsonDocument response;
     if (gpioHal.getAmbient() == AMBIENT_ON) {
-        response["AMBIENT_OFF_BEACON"] = STATE_NEGATIVE;
-        response["AMBIENT_ON_BEACON"] = STATE_POSITIVE;  
+        response[AMBIENT_OFF_BEACON] = STATE_NEGATIVE;
+        response[AMBIENT_ON_BEACON] = STATE_POSITIVE;  
     } else {
-        response["AMBIENT_OFF_BEACON"] = STATE_POSITIVE;
-        response["AMBIENT_ON_BEACON"] = STATE_NEGATIVE;  
+        response[AMBIENT_OFF_BEACON] = STATE_POSITIVE;
+        response[AMBIENT_ON_BEACON] = STATE_NEGATIVE;  
     }
     webSocketManager.sendMessage(sender, COMM_VISIBILITY, response);
 }
@@ -192,7 +215,7 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     JsonVariantConst doorNumValue = data[MSG_DOORNUM];
     
     if (doorNumValue.isNull()) {
-        boxDisplay.logPrint("Error: Missing door number in request");
+        logger.logPrint(SEVERITY_ERROR, "Error: Missing door number in request", BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Missing door number in request";
         webSocketManager.sendMessage(sender, COMM_CONTENT, response);
         return;
@@ -202,14 +225,14 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
       const char* doorNumStr = doorNumValue.as<const char*>();
       char* endptr;
       if (doorNumStr == nullptr || doorNumStr[0] == '\0') {
-        boxDisplay.logPrint("Error: Missing door number in request");
+        logger.logPrint(SEVERITY_ERROR, "Error: Missing door number in request", BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Missing door number in request";
         webSocketManager.sendMessage(sender, COMM_CONTENT, response);
         return;
       }
       lnum = strtoul(doorNumStr, &endptr, 10);
       if (*endptr != '\0') {
-        boxDisplay.logPrint("Error: Invalid door number " + String(doorNumStr));
+        logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNumStr), BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Invalid door number " + String(doorNumStr);
         webSocketManager.sendMessage(sender, COMM_CONTENT, response);
         return;
@@ -217,14 +240,14 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     } else if (doorNumValue.is<unsigned long>()) {
       lnum = doorNumValue.as<unsigned long>();
     } else {
-      boxDisplay.logPrint("Error: Invalid door number format");
+      logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number format", BOX_HOST_NAME, LOGAREA_ACCESS);
       response[MSG_LASTRESULT] = "Error: Invalid door number format";
       webSocketManager.sendMessage(sender, COMM_CONTENT, response);
       return;
     }
 
     if (lnum > 254 ) { // 0 is not a valid door number, and 255 is reserved for special purposes
-      boxDisplay.logPrint("Error: Invalid door number " + String(lnum));
+      logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
       response[MSG_LASTRESULT] = "Error: Invalid door number " + String(lnum);
       webSocketManager.sendMessage(sender, COMM_CONTENT, response);
       return;
@@ -237,27 +260,27 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     if(isOpen != DOOR_UNKNOWN) {
       if (isOpen == DOOR_MIXED) {
         isOpen = DOOR_OPEN;                 // ### to be fixed when UI can properly handle MIXED state, meanwhile show mixed state as open for the response, but log it as a warning
-        boxDisplay.logPrint("Warning: Mixed state detected for door " + String(doorNum));
+        logger.logPrint(SEVERITY_WARNING, "Warning: Mixed state detected for door " + String(doorNum), BOX_HOST_NAME, LOGAREA_ACCESS);
       } 
       if (isOpen == DOOR_OPEN) {
         response[DOOR_OPEN_BEACON] = STATE_POSITIVE;
         response[DOOR_CLOSED_BEACON] = STATE_NEGATIVE;
         response[DOOR_MIXED_BEACON] = STATE_NEGATIVE;
-        boxDisplay.logPrint("Door " + String(doorNum) + " is OPEN");
+        logger.logPrint(SEVERITY_INFO, "Door " + String(doorNum) + " is OPEN", BOX_HOST_NAME, LOGAREA_ACCESS);
       } else if (isOpen == DOOR_CLOSED) {
         response[DOOR_OPEN_BEACON] = STATE_NEGATIVE;
         response[DOOR_CLOSED_BEACON] = STATE_POSITIVE;
         response[DOOR_MIXED_BEACON] = STATE_NEGATIVE;
-        boxDisplay.logPrint("Door " + String(doorNum) + " is CLOSED");
+        logger.logPrint(SEVERITY_INFO, "Door " + String(doorNum) + " is CLOSED", BOX_HOST_NAME, LOGAREA_ACCESS);
       } else { // isOpen == DOOR_MIXED
         response[DOOR_OPEN_BEACON] = STATE_NEGATIVE;
         response[DOOR_CLOSED_BEACON] = STATE_NEGATIVE;
         response[DOOR_MIXED_BEACON] = STATE_POSITIVE;
-        boxDisplay.logPrint("Door " + String(doorNum) + " is in MIXED state");
+        logger.logPrint(SEVERITY_WARNING, "Door " + String(doorNum) + " is in MIXED state", BOX_HOST_NAME, LOGAREA_ACCESS);
       }
       webSocketManager.sendMessage(sender, COMM_VISIBILITY, response);
     } else {
-      boxDisplay.logPrint("Error: Invalid door number " + String(doorNum));
+      logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNum), BOX_HOST_NAME, LOGAREA_ACCESS);
     }
 }
 
@@ -265,14 +288,23 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
 // Reads pins from storage and returns them in JSON response. Request is expected to contain firstPin and pinCount parameters to specify which pins to return, e.g. for pagination in the UI.
 void handleGetPins(AsyncWebSocketClient *sender, JsonObj data)
 {
-  int8_t firstPinId = data["pinId"];
-  int8_t pinCount = data["pinCount"];
-  int8_t lastPinId = firstPinId + pinCount - 1;
+  uint32_t firstPinId = jsonUintOr(data, "pinId", jsonUintOr(data, MSG_PINID, 0));
+  uint32_t pinCount = jsonUintOr(data, "pinCount", jsonUintOr(data, "pincount", 100));
   JsonDocument response;
   String pinsTable;
+
+  if (firstPinId == 0) {
+    firstPinId = 1;
+  }
+  if (pinCount == 0) {
+    pinCount = 100;
+  }
   
   size_t pinInfoSize = pinStorage.getPins(firstPinId, pinCount, pinsTable);
+  Serial.printf("[PinStore] handleGetPins: firstPinId=%u, pinCount=%u, active=%u, htmlLen=%u\n",
+                firstPinId, pinCount, static_cast<unsigned>(pinInfoSize), pinsTable.length());
   response["pinrows"] = pinsTable;
+  response["pinrowcount"] = pinInfoSize;
   webSocketManager.sendMessage(sender, COMM_CONTENT, response);
 }
 
@@ -289,7 +321,7 @@ void handleGetPager(AsyncWebSocketClient *sender, JsonObj data)
 //  response["pinrows"] = pinStorage.getPins(firstPinId, pinCount, pinsTable);
 //  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
 // ### sem bude pot5eba napsat obsluhu stránkování, až to GUI bude umět, zatím jen log a prázdný response
-  boxDisplay.logPrint("handleGetPager called with firstPinId: " + String(firstPinId) + ", pinCount: " + String(pinCount) + ", lastPinId: " + String(lastPinId) + "\n"); //###
+  logger.logPrint(SEVERITY_DEBUG, "handleGetPager called with firstPinId: " + String(firstPinId) + ", pinCount: " + String(pinCount) + ", lastPinId: " + String(lastPinId) + "\n", BOX_HOST_NAME, LOGAREA_SYSTEM); //###
   webSocketManager.sendMessage(sender, COMM_CONTENT, response);
 }
 
@@ -297,19 +329,43 @@ void handleGetPager(AsyncWebSocketClient *sender, JsonObj data)
 void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
 {
   const char* doorNumStr = data["doornum"];
+  char presenceCode[PRESENCE_CODE_LENGTH + 1] = {0};
+
+
 
   if (doorNumStr) {
     JsonDocument response; 
     char* endptr;
     unsigned long lnum = strtoul(doorNumStr, &endptr, 10);
     if (lnum > 254 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
-      boxDisplay.logPrint("Error: Invalid door number " + String(lnum));
+      logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
       response["lastresult"] = "Error: Invalid door number " + String(lnum);
       webSocketManager.sendMessage(sender, COMM_CONTENT, response);
       return;
     }
+    if (data[MSG_PRESENCECODE] != nullptr) {
+      strncat(presenceCode, data[MSG_PRESENCECODE], PRESENCE_CODE_LENGTH);
+    }
+    if (data[MSG_CHECKPRESENCE] != nullptr) {
+      bool checkPresence = data[MSG_CHECKPRESENCE];
+      if (checkPresence && strlen(presenceCode) == 0) {
+        logger.logPrint(SEVERITY_ERROR, "Error: Presence code required but not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
+        response[MSG_LASTRESULT] = "Error: Presence code required but not provided";
+        webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+        return;
+      }
+      if(checkPresence && (millis() > boxStateMachine.getPresenceCodeExpiration() || strcmp(presenceCode, boxStateMachine.getPresenceCode()) != 0)) {
+        logger.logPrint(SEVERITY_ERROR, "Error: Invalid presence code " + String(presenceCode), BOX_HOST_NAME, LOGAREA_ACCESS);
+        response[MSG_LASTRESULT] = "Error: Invalid presence code " + String(presenceCode);
+        webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+        return;
+      }
+    }
     uint8_t num = static_cast<uint8_t>(lnum);
 
+    logger.logPrint(SEVERITY_INFO, "Opening box door number " + String(num), BOX_HOST_NAME, LOGAREA_ACCESS);
+    response[MSG_LASTRESULT] = "Opening door number " + String(num);
+    webSocketManager.sendMessage(sender, COMM_CONTENT, response);
     BoxEventData event = {};
     event.eventType = BoxEventType::WebOpenBox;
     event.data.doorData.doorNum = num;
@@ -343,23 +399,23 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
       if (data[MSG_PINVALUE] != nullptr) {
         strncat(recToDelete.pin, data[MSG_PINVALUE], PIN_CODE_LEN);
       } else {
-        boxDisplay.logPrint("Error deleting pin with id " + String(pinId) + ": pin not provided");
+        logger.logPrint(SEVERITY_ERROR, "Error deleting pin with id " + String(pinId) + ": pin not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
         statusResponse[MSG_LASTRESULT] = "Error deleting pin with id " + String(pinId) + ": pin not provided";
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
         return;
       }
       if ( pinStorage.removePin(recToDelete) == pinId ) {
-        boxDisplay.logPrint("Pin " + String(pinId) + " / " + String(recToDelete.name) + " deleted successfully");
+        logger.logPrint(SEVERITY_INFO, "Pin " + String(pinId) + " / " + String(recToDelete.name) + " deleted successfully", BOX_HOST_NAME, LOGAREA_ACCESS);
         statusResponse[MSG_LASTRESULT] = "Pin " + String(pinId) + " / " + String(recToDelete.name) + " deleted successfully";
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
         dataChange = true;
       } else {
-        boxDisplay.logPrint("Error deleting pin " + String(pinId) + " / " + String(recToDelete.name));
+        logger.logPrint(SEVERITY_ERROR, "Error deleting pin " + String(pinId) + " / " + String(recToDelete.name), BOX_HOST_NAME, LOGAREA_ACCESS);
         statusResponse[MSG_LASTRESULT] = "Error deleting pin " + String(pinId) + " / " + String(recToDelete.name);
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
       }
     } else {
-      boxDisplay.logPrint("Error deleting pin with id " + String(pinId) + ": pin name not provided");
+      logger.logPrint(SEVERITY_ERROR, "Error deleting pin with id " + String(pinId) + ": pin name not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
       statusResponse[MSG_LASTRESULT] = "Error deleting pin with id " + String(pinId) + ": pin name not provided";
       webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
     }
@@ -371,7 +427,7 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
     if (data[MSG_PINNAME] != nullptr) {
       strncat(recToSave.name, data[MSG_PINNAME], PIN_NAME_LEN);
     } else {
-      boxDisplay.logPrint("Error saving pin with id " + String(pinId) + ": pin name not provided");
+      logger.logPrint(SEVERITY_ERROR, "Error saving pin with id " + String(pinId) + ": pin name not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
       statusResponse[MSG_LASTRESULT] = "Error saving pin with id " + String(pinId) + ": pin name not provided";
       webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
       return;
@@ -379,7 +435,7 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
     if (data[MSG_PINVALUE] != nullptr) {
       strncat(recToSave.pin, data[MSG_PINVALUE], PIN_CODE_LEN);
     } else {
-      boxDisplay.logPrint("Error saving pin with id " + String(pinId) + ": pin not provided");
+      logger.logPrint(SEVERITY_ERROR, "Error saving pin with id " + String(pinId) + ": pin not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
       statusResponse[MSG_LASTRESULT] = "Error saving pin with id " + String(pinId) + ": pin not provided";
       webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
       return;
@@ -402,25 +458,25 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
     if (data[MSG_DOORNUM] != nullptr) {
       char* endptr;
       unsigned long lnum = strtoul(data[MSG_DOORNUM], &endptr, 10);
-      if (lnum > 254 || lnum == 0 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
-        boxDisplay.logPrint("Error: Invalid door number " + String(lnum));
+      if (lnum >= DOOR_UNKNOWN ||  *endptr != '\0') { // DOOR_UNKNOWN (255) is reserved for special purposes, no bigger numbers are allowed, and the string must be a valid number
+        logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
         statusResponse[MSG_LASTRESULT] = "Error: Invalid door number " + String(lnum);
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
         return;
       }
       recToSave.doorNum = static_cast<uint8_t>(lnum);
     } else {
-      recToSave.doorNum = 1; // UI zatim neposkytuje možnost nastavit číslo dveří, takže defaultně nastavíme na 1, ale v budoucnu by to mělo být součástí UI a pak se to bude brát z dat ###
+      recToSave.doorNum = 0; // UI zatim neposkytuje možnost nastavit číslo dveří, takže nastavíme na 0 pokud není řečeno jinak, ale v budoucnu by to mělo být součástí UI a pak se to bude brát z dat ###
     }
     Serial.printf("Saving pin: id=%u, name=%s, pin=%s, doorNum=%u, validFrom=%llu, validTo=%llu, remaining=%d\n", recToSave.pinId, recToSave.name, recToSave.pin, recToSave.doorNum, recToSave.validFrom, recToSave.validTo, recToSave.remaining); //###
     if (pinId){                   // update existing pin
       if ( pinStorage.updatePin(recToSave) ) {
-        boxDisplay.logPrint("Pin " + String(pinId) + " / " + String(recToSave.name) + " saved successfully\n");
+        logger.logPrint(SEVERITY_INFO, "Pin " + String(pinId) + " / " + String(recToSave.name) + " saved successfully\n", BOX_HOST_NAME, LOGAREA_ACCESS);
         statusResponse[MSG_LASTRESULT] = "Pin '" + String(pinId) + " / " + String(recToSave.name) + "' saved successfully";
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
         dataChange = true;
       } else {
-        boxDisplay.logPrint("Error saving pin " + String(pinId) + " / " + String(recToSave.name) + "\n");
+        logger.logPrint(SEVERITY_ERROR, "Error saving pin " + String(pinId) + " / " + String(recToSave.name) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
         statusResponse[MSG_LASTRESULT] = "Error saving pin '" + String(pinId) + " / " + String(recToSave.name) + "'";
 
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
@@ -428,12 +484,12 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
     } else {                      // add new pin
       uint32_t newPinId = pinStorage.addPin(recToSave);  
       if ( newPinId ) {
-        boxDisplay.logPrint("Pin " + String(newPinId) + " / " + String(recToSave.name) + " added successfully\n");
+        logger.logPrint(SEVERITY_INFO, "Pin " + String(newPinId) + " / " + String(recToSave.name) + " added successfully\n", BOX_HOST_NAME, LOGAREA_ACCESS);
         statusResponse[MSG_LASTRESULT] = "Pin '" + String(newPinId) + " / " + String(recToSave.name) + "' added successfully";
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
         dataChange = true;
       } else {
-        boxDisplay.logPrint("Error adding new pin " + String(recToSave.name) + "\n");
+        logger.logPrint(SEVERITY_ERROR, "Error adding new pin " + String(recToSave.name) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
         statusResponse[MSG_LASTRESULT] = "Error adding new pin '" + String(recToSave.name) + "'";
         webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
       }
@@ -468,7 +524,7 @@ void processPassword() {
       sprintf(passNum, "%d", pass[i]); 
       strcat ( passStr, passNum );
     }
-    boxDisplay.logPrint( passStr );
+    logger.logPrint(SEVERITY_DEBUG, passStr, BOX_HOST_NAME, LOGAREA_ACCESS);
     
 
   // TODO: validace, akce, atd.
@@ -505,10 +561,26 @@ void registerWebServerRoutes(AsyncWebServer &server) {
   server.on("/capture", AsyncWebRequestMethod::HTTP_GET, handleCapture);
 }
 
+void UIcontrolCallback(uint8_t action ) { /*const char* arg, AsyncWebSocketClient *sender*/
+  JsonDocument response;
+  if (action == UI_DISABLE_DOOR_CONTROLS) {
+    response[DOOR_CONTROLS_BEACON] = MSG_DISABLE;
+    webSocketManager.notifyClients(COMM_ENORDIS, response);
+    return;
+  }
+  if (action == UI_ENABLE_DOOR_CONTROLS) {
+    response[DOOR_CONTROLS_BEACON] = MSG_ENABLE;
+    webSocketManager.notifyClients(COMM_ENORDIS, response);
+    return;
+  }
+  
+}
+
 /****************************/
 /****************************/
 void setup() {
   Serial.begin(9600);
+  logger.begin();
   Serial.println("\n\n --- B O X   prototype starting! ---\n");
 
 // Initialize I2C
@@ -516,46 +588,43 @@ void setup() {
   Wire.setClock(100000);  // klasika, žádný spěch
 
   boxDisplay.displayInit(&gpioHal);
-  boxDisplay.logPrint("Display initialized\n");  
+  logger.logPrint(SEVERITY_INFO, "Display initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
 
-  boxDisplay.logPrint("--- BOX prototype ---\n");
+  logger.logPrint(SEVERITY_INFO, "--- BOX prototype ---\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
 
   // Initialize timer manager and GPIO HAL (GPIO HAL needs timer manager for scheduling future tasks, e.g. to turn off the lock after some time)
   timerManager.initializeTimerManager(handleDueActions);
   //GpioHAL::ambientPin = AMBIENT_PIN; // Set the ambient light pin in GpioHAL before initializing it
   gpioHal.initializeGpioHAL(&timerManager, initialDoorMappings, AMBIENT_PIN, sizeof(initialDoorMappings) / sizeof(initialDoorMappings[0]));
-  boxDisplay.logPrint("-HAL initialized\n");
+  logger.logPrint(SEVERITY_INFO, "-HAL initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
   // Initializa keyboard (null operation at present)
   boxKeyboard.keyboardInit();
   keyboardState.keyboardMode = KEYBOARD_MODE_COMMAND;
   keyboardState.currentPasswordLen = 0;
   keyboardState.passwordComplete = false;
   keyboardState.cancelPressed = false;
-  boxDisplay.logPrint("--Keyboard initialized\n");
+  logger.logPrint(SEVERITY_INFO, "--Keyboard initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
   boxStateMachine.initialize();
   boxStateMachine.setStateChangeCallback(onStateChanged);
-  boxDisplay.logPrint("---State machine initialized\n");
+  boxStateMachine.setUIUpdateCallback(UIcontrolCallback);
+  logger.logPrint(SEVERITY_INFO, "---State machine initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
   // Create mutex for thread safety
   imageMutex = xSemaphoreCreateMutex();
 
-  // Initialize PIN storage
-  pinStorage.begin();
-  boxDisplay.logPrint ("PIN storage init\n");
-
   // Initialize camera
   //initCamera();
-  //boxDisplay.logPrint("Camera initialized\n");
+  //logger.logPrint(SEVERITY_INFO, "Camera initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
 
   // Register callback BEFORE starting preview
 //  myCAM.registerCallBack(captureCallback, 200, stopCallback);
-//  boxDisplay.logPrint("Camera callback reg\n");
+//  logger.logPrint(SEVERITY_INFO, "Camera callback reg\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
 
   
   // Connect to WiFi
   WiFi.setHostname(reqhostname);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  boxDisplay.logPrint("Starting WiFi\n");
+  logger.logPrint(SEVERITY_INFO, "Starting WiFi\n", BOX_HOST_NAME, LOGAREA_COMM);
 
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
@@ -565,16 +634,21 @@ void setup() {
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    boxDisplay.logPrint("WiFi connected!\n");
+    logger.logPrint(SEVERITY_INFO, "WiFi connected!\n", BOX_HOST_NAME, LOGAREA_COMM);
+    wifiState = 1;
+    boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
     IPAddress ip = WiFi.localIP();
     char ipStr[18];         // Max IP string length is 15 chars + null terminator
     sprintf(ipStr, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-    boxDisplay.logPrint( ipStr );
+    logger.logPrint(SEVERITY_INFO, ipStr, BOX_HOST_NAME, LOGAREA_COMM);
     Serial.print(ipStr);
     Serial.print("Open this URL: http://");
     Serial.println(WiFi.localIP());
+    boxDisplay.setCommunicationStatus(COMMUNICATION_STATUS_OK);
   } else {
-    boxDisplay.logPrint("WiFi FAILED!\n");
+    wifiState = 0;
+    boxDisplay.setLinkStatus(ONLINE_STATUS_OFFLINE);
+    logger.logPrint(SEVERITY_ERROR, "WiFi FAILED!\n", BOX_HOST_NAME, LOGAREA_COMM);
   }
 
  // Configure and start NTP for time synchronization
@@ -587,6 +661,11 @@ void setup() {
       Serial.println("Failed to obtain time");
   }
 
+  // Initialize PIN storage after the initial NTP attempt, so date-limited
+  // records are evaluated against the best available time.
+  pinStorage.begin();
+  logger.logPrint(SEVERITY_INFO, "PIN storage init\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+
   // Register webserver routes
   registerWebServerRoutes(webserver);
 
@@ -598,7 +677,7 @@ void setup() {
   //Serial.println("Starting preview...");
   //myCAM.startPreview(CAM_VIDEO_MODE_3);    // Something strange here: header used by adruino IDE lists many modes, mode 3 means 320x240
   //myCAM.startPreview(CAM_VIDEO_MODE_0);     // header used by Platformio lists only 4 modes, mode 0 means 320x240
-  //boxDisplay.logPrint("Streaming active\n");
+  //logger.logPrint(SEVERITY_INFO, "Streaming active\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
 
 //Websocket stuff initialization
 
@@ -611,10 +690,10 @@ void setup() {
   webSocketManager.registerMessageHandler(COMM_GET_AMBIENT, handleGetAmbient);              // get ambient light state 
   webSocketManager.registerMessageHandler(COMM_GET_PAGER, handleGetPager);                  // get pager state
 
-  boxDisplay.logPrint("WebSocket Initialized\n");
+  logger.logPrint(SEVERITY_INFO, "WebSocket Initialized\n", BOX_HOST_NAME, LOGAREA_COMM);
   // Start server  
   webserver.begin();
-  boxDisplay.logPrint("Webserver started!\n");
+  logger.logPrint(SEVERITY_INFO, "Webserver started!\n", BOX_HOST_NAME, LOGAREA_COMM);
 
   /*
 // set I/O pins
@@ -622,7 +701,7 @@ void setup() {
   digitalWrite(ledPin, LOW);
   pinMode(doorPin, INPUT);
   */
-  boxDisplay.logPrint("SETUP COMPLETE!\n");
+  logger.logPrint(SEVERITY_INFO, "SETUP COMPLETE!\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
 
 }  //setup
 
@@ -658,10 +737,10 @@ void handleDueActions(uint8_t action, const char* arg) {
         uint8_t doorNum = atoi(arg);
         uint8_t isOpen = gpioHal.readDoorState(doorNum);
         if (isOpen == DOOR_MIXED) {
-          boxDisplay.logPrint("Warning: Mixed state detected for door " + String(doorNum) + " during notification");
+          logger.logPrint(SEVERITY_WARNING, "Warning: Mixed state detected for door " + String(doorNum) + " during notification", BOX_HOST_NAME, LOGAREA_ACCESS);
         }
         if (isOpen == DOOR_UNKNOWN) {
-          boxDisplay.logPrint("Error: Invalid door number " + String(doorNum) + " in notification");
+          logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNum) + " in notification", BOX_HOST_NAME, LOGAREA_ACCESS);
         }
         if (isOpen == DOOR_OPEN) {
           response["door_state_open"] = "yes";
@@ -688,24 +767,24 @@ void handleDueActions(uint8_t action, const char* arg) {
       }
       break;
     case LOCK_DEACTIVATE: {
-        boxDisplay.logPrint(arg);
+        logger.logPrint(SEVERITY_DEBUG, arg, BOX_HOST_NAME, LOGAREA_SYSTEM);
         uint8_t lockNum = atoi(arg);
         uint8_t result = gpioHal.lockDeactivate(lockNum);
-        if (result != 0) {
-          boxDisplay.logPrint("Lock " + String(lockNum) + " deactivated\n");
+        if (result != DOOR_UNKNOWN) {
+          logger.logPrint(SEVERITY_INFO, "Lock " + String(lockNum) + " deactivated\n", BOX_HOST_NAME, LOGAREA_ACCESS);
         } else {
-          boxDisplay.logPrint("Error: Invalid lock number in timer callback: " + String(lockNum));
+          logger.logPrint(SEVERITY_ERROR, "Error: Invalid lock number in timer callback: " + String(lockNum), BOX_HOST_NAME, LOGAREA_ACCESS);
         }      
       }
       break;
 
     case AMBIENT_DEACTIVATE: 
-      boxDisplay.logPrint("Deactivating ambient light\n");
+      logger.logPrint(SEVERITY_INFO, "Deactivating ambient light\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
       gpioHal.ambientOff();
       break;
     
     case PASSWORD_TIMEOUT:
-        boxDisplay.logPrint("Password timeout passed\n");
+        logger.logPrint(SEVERITY_INFO, "Password timeout passed\n", BOX_HOST_NAME, LOGAREA_ACCESS);
         {
           BoxEventData event = {};
           event.eventType = BoxEventType::PasswordTimeout;
@@ -714,7 +793,7 @@ void handleDueActions(uint8_t action, const char* arg) {
       break;
 
     default:
-      boxDisplay.logPrint ("Unknown due action called");
+      logger.logPrint(SEVERITY_ERROR, "Unknown due action called", BOX_HOST_NAME, LOGAREA_SYSTEM);
     }
      
     // Add more actions as needed
@@ -737,12 +816,14 @@ void checkLinkStatus() {
         Serial.println("WiFi restored");
       }
       wifiState = 1;
+      boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
     }
   } else {
     if (!wifiState) {
       Serial.println("WiFi restored");
       wifiState = 1;
     }
+    boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
   }
     linkStatusMillis = currentMillis + linkStatusInterval;
 } // checkWifi()
@@ -753,6 +834,7 @@ void loop() {
   timerManager.update(currentMillis);
   boxKeyboard.handleKeyboard(&keyboardState, &boxStateMachine);
   boxStateMachine.update(currentMillis);
+  logger.update(currentMillis);
 
   webSocketManager.update(currentMillis);
   ElegantOTA.loop();
@@ -762,6 +844,8 @@ void loop() {
 
   if ( statusLineTimeout < currentMillis ) {
     statusLineTimeout = currentMillis + STATUSLINE_REFRESH_INTERVAL;
+    uint8_t clientCount = webSocketManager.getClientCount();
+    boxDisplay.setCommunicationStatus(clientCount <= 9 ? char(clientCount + '0') : '+');
     boxDisplay.writeStatusLine();
   }
 // captureThread() processes incoming data and calls our callback

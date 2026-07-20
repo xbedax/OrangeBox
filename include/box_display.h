@@ -5,15 +5,15 @@
 #include "gpio_hal.h"
 //#include <LCDI2C_Multilingual.h>
 
-#ifdef DISP_OLED
-#include <Adafruit_GFX.h>
-#include <Adafruit_SH1106.h>
-#define OLED_ADDRESS 0x3C  //hard codded in Adafruit_SH1106.h SH1106_I2C_ADDRESS
+//#ifdef DISP_OLED
+//#include <Adafruit_GFX.h>
+//#include <Adafruit_SH1106.h>
+//#define OLED_ADDRESS 0x3C  //hard codded in Adafruit_SH1106.h SH1106_I2C_ADDRESS
 
-#define OLEDROWS 4
-#define OLEDTEXTSIZE 8
-#define OLEDLINECHARS 20
-#endif
+//#define OLEDROWS 4
+//#define OLEDTEXTSIZE 8
+//#define OLEDLINECHARS 20
+//#endif
 
 //overal layout - 20x4 lcd
 #define INFO_LINE_IDX 0
@@ -77,16 +77,18 @@
 #define STIDX_ONLINE     3   
 #define STIDX_MAX        4                              // total number of status indicators, adjust as needed, but make sure to update the status line layout in the display accordingly
 
-//  connection indicators
+//  connection indicators ... LINK
 #define ONLINE_STATUS_WIFI          'W'         // WiFi connected
 #define ONLINE_STATUS_5G            '5'         // 5G connected (if applicable)
 #define ONLINE_STATUS_OFFLINE       'X'         // No connection
 
-
+//  communication indicators ... COMM
 #define COMMUNICATION_STATUS_OK        'O'         // Communication OK
 #define COMMUNICATION_STATUS_ERROR     'E'         // Communication error
 
-//ambient
+
+
+//ambient ... AMBIENT
 #define AMBIENT_STATUS_ON             'A'         // Ambient light on
 #define AMBIENT_STATUS_OFF            '.'         // Ambient light off
 
@@ -133,9 +135,6 @@ void setPasswordLength (uint8_t pass_len);
 // Set the current presence code for display purposes, e.g. when the user is verifying their presence code, this can be used to display the code and its validity progress
 void setVerifyCode (const char* code);
 void setProgressBar (uint8_t expirationProgresss); // e.g. display a progress bar for the presence code validity, where expirationProgress is a value from 0 to 100 representing the percentage of validity time remaining
-
-// Log a message to the serial console and, if available, to the OLED display.
-void logPrint(String logText);
 
 void writeInfoLine (uint8_t infoType);
 void writeStatusLine (void);

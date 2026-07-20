@@ -4,16 +4,16 @@
 #include <ctime>
 #include "box_display.h"
 #include "gpio_hal.h"
+#include "logger.h"
 
 #ifdef DISP_LCD
 #include <LCDI2C_Multilingual.h>
 static LCDI2C_Latin lcd1(LCD_ADDRESS, LCD_WIDTH, LCD_HEIGHT);  // I2C address: 0x27; LCD = Surenoo SLC2004A (EU / Latin)
 #endif
 
-#ifdef DISP_OLED
-Adafruit_SH1106 display(OLED_ADDRESS);
-String logRows[OLEDROWS];
-#endif
+//#ifdef DISP_OLED
+//Adafruit_SH1106 display(OLED_ADDRESS);
+//#endif
 
 extern const char* fversion;
 
@@ -37,26 +37,6 @@ String BoxDisplay::centerLine(String text) {
 #endif
     return centerText;
 }
-
-void BoxDisplay::logPrint(String logText){
-    Serial.print (logText);
-
-#ifdef DISP_OLED
-    display.setTextSize(1);
-    display.setTextColor(WHITE);
-    for (int i = 0; i < OLEDROWS - 1; i++){
-        logRows[i] = logRows[i+1];
-    }
-    logRows[OLEDROWS - 1] = logText;
-    display.clearDisplay();
-    for (int i = 0; i < OLEDROWS; i++){
-        display.setCursor(0,(i+1)*OLEDTEXTSIZE);
-        display.print(logRows[i]);
-    }
-    display.display();
-#endif
-
-} // logPrint
 
 /*  No longer necessary, use writeActionLine with ACTIONLINE_PASS and currentPassLen to display the password input progress instead, but keeping this function here for reference if needed in the future
 void BoxDisplay::displayPassword(uint8_t pass_len) {
@@ -108,7 +88,7 @@ void BoxDisplay::writeActionLine (uint8_t actionType) {
   char actionLineBuff[DISP_WIDTH + 1]; // Buffer to hold the entire action line
   uint8_t actionLineIdx = 0;
   if (actionType >= ACTIONIDX_MAX) {
-    logPrint("Invalid actionType idx presented\n");
+    logger.logPrint(SEVERITY_ERROR, "Invalid actionType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
     return;
   }
   #ifdef DISP_LCD
@@ -178,7 +158,7 @@ void BoxDisplay::writeActionLine (uint8_t actionType) {
           lcd1.print(actionLineBuff); 
         #endif
       } else {
-        logPrint("Invalid actionType idx presented\n");
+        logger.logPrint(SEVERITY_ERROR, "Invalid actionType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
       }
       break;
   }
@@ -189,7 +169,7 @@ void BoxDisplay::writeInfoLine (uint8_t infoType) {
     // Usualy used to display static helper text
 
   if (infoType >= INFOIDX_MAX) {
-  logPrint("Invalid infoType idx presented\n");
+  logger.logPrint(SEVERITY_ERROR, "Invalid infoType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
   return;
   }
 #ifdef DISP_LCD
@@ -200,7 +180,7 @@ void BoxDisplay::writeInfoLine (uint8_t infoType) {
 
 void BoxDisplay::writeResponseLine (uint8_t responseType) {
   if (responseType >= RESPONSEIDX_MAX) {
-    logPrint("Invalid responseType idx presented\n");
+    logger.logPrint(SEVERITY_ERROR, "Invalid responseType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
     return;
   }
 
@@ -229,8 +209,7 @@ void BoxDisplay::writeResponseLine (uint8_t responseType) {
 }
 
 void BoxDisplay::setCommunicationStatus (char comm_status) {
-    currentStatus[STIDX_LINK] = comm_status;
-    writeStatusLine();
+    currentStatus[STIDX_CLIENT] = comm_status;
 }
 
 void BoxDisplay::setAmbientStatus (char ambient_status) {
@@ -283,15 +262,7 @@ void BoxDisplay::setProgressBar (uint8_t expirationProgress) {
 void BoxDisplay::displayInit(GpioHAL* gpioHal) {
     gpioHAL = gpioHal; // Store the pointer to the GPIO HAL for later use in display updates
 
-#ifdef DISP_OLED
-//  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS);
-  display.begin(SH1106_SWITCHCAPVCC, OLED_ADDRESS);
-  display.clearDisplay();
-//  display.display();
-  display.setTextSize(OLEDTEXTSIZE);
-  display.setTextColor(WHITE);
-  display.setCursor(0, 0);
-#endif
+
 #ifdef DISP_LCD
   Serial.println("Initializing LCD display...");
   lcd1.init();
