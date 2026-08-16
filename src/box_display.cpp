@@ -91,10 +91,12 @@ void BoxDisplay::writeActionLine (uint8_t actionType) {
     logger.logPrint(SEVERITY_ERROR, "Invalid actionType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
     return;
   }
+  memset(actionLineBuff, ' ', DISP_WIDTH);
+  actionLineBuff[DISP_WIDTH] = '\0';
   #ifdef DISP_LCD
   lcd1.setCursor(0, ACTION_LINE_IDX);
-  strcpy(actionLineBuff, actionTypes[actionType]);
-  actionLineIdx = strlen(actionLineBuff);
+  actionLineIdx = min((uint8_t)strlen(actionTypes[actionType]), (uint8_t)DISP_WIDTH);
+  memcpy(actionLineBuff, actionTypes[actionType], actionLineIdx);
   #endif
   switch (actionType) {
     case ACTIONLINE_HOME:
@@ -103,57 +105,43 @@ void BoxDisplay::writeActionLine (uint8_t actionType) {
       std::time_t now = std::time(nullptr);
       std::tm* localTime = std::localtime(&now);
       char buffer[17];
-      std::strftime(buffer, sizeof(buffer), "%d.%m.%Y %H:%M", localTime);
-      std::string timeStr(buffer);
-      buffer[17] = '\0';
+      if (localTime == nullptr || std::strftime(buffer, sizeof(buffer), "%d.%m.%Y %H:%M", localTime) == 0) {
+        strncpy(buffer, "--.--.---- --:--", sizeof(buffer));
+        buffer[sizeof(buffer) - 1] = '\0';
+      }
       lcd1.print (centerLine(buffer));
       break;
       }
       #endif
     case ACTIONLINE_OPEN_PASSWORD:
-      for (uint8_t i = 0; i < currentPassLen ; i++) {
+      for (uint8_t i = 0; i < currentPassLen && actionLineIdx < DISP_WIDTH; i++) {
         actionLineBuff[actionLineIdx++] = '*'; // Display stars for password input
-      }
-      for (uint8_t i = actionLineIdx; i < DISP_WIDTH; i++) {
-        actionLineBuff[i] = ' '; // Clear remaining part of the line
       }
       #ifdef DISP_LCD
         lcd1.print(actionLineBuff); 
       #endif
       break;
     case ACTIONLINE_BADPASS:
-      for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]); i++) {
-        actionLineBuff[actionLineIdx++] = ' '; // Clear remaining part of the line
-      }
       #ifdef DISP_LCD
         lcd1.print(actionLineBuff); 
       #endif
       break;
     case ACTIONLINE_CLOSE:
-      for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]); i++) {
-        actionLineBuff[actionLineIdx++] = ' '; // Clear remaining part of the line
-      }
       #ifdef DISP_LCD
       lcd1.print(actionLineBuff); 
       #endif
 
       break;
     case ACTIONLINE_PRESENCE:
-      strcpy(&actionLineBuff[actionLineIdx], currentVerifyCode);
-      actionLineIdx += strlen(currentVerifyCode);
-      
-      for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]) - strlen(currentVerifyCode); i++) {
-        actionLineBuff[actionLineIdx++] = ' '; // Clear remaining part of the line
-      } 
+      for (uint8_t i = 0; currentVerifyCode[i] != '\0' && actionLineIdx < DISP_WIDTH; i++) {
+        actionLineBuff[actionLineIdx++] = currentVerifyCode[i];
+      }
       #ifdef DISP_LCD
         lcd1.print(actionLineBuff); 
       #endif
       break;
     default:
       if ( actionType < ACTIONIDX_MAX) {
-        for (uint8_t i = 0; i < DISP_WIDTH - strlen(actionTypes[actionType]); i++) {
-          actionLineBuff[actionLineIdx++] = ' '; // Clear remaining part of the line
-        }
         #ifdef DISP_LCD
           lcd1.print(actionLineBuff); 
         #endif
@@ -212,9 +200,9 @@ void BoxDisplay::setCommunicationStatus (char comm_status) {
     currentStatus[STIDX_CLIENT] = comm_status;
 }
 
-void BoxDisplay::setAmbientStatus (char ambient_status) {
-    currentStatus[STIDX_AMBIENT] = ambient_status;
-    writeStatusLine();
+void BoxDisplay::setLoggerStatus (char logger_status) {
+    currentStatus[STIDX_LOGGER] = logger_status;
+//    writeStatusLine();
 }
 
 void BoxDisplay::setLinkStatus (char link_status) {

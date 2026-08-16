@@ -71,6 +71,7 @@ public:
 
     uint16_t queuedCount() const;
     uint32_t droppedCount() const;
+    bool hasPendingOutput() const;
 
 protected:
     virtual bool reconnect(unsigned long currentMillis) = 0;

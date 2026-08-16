@@ -21,6 +21,10 @@ void BufferedLogTransport::begin()
 
 void BufferedLogTransport::update(unsigned long currentMillis)
 {
+    if (!hasPendingOutput()) {
+        return;
+    }
+
     if (!isConnected() && currentMillis >= nextReconnectMillis) {
         reconnect(currentMillis);
         nextReconnectMillis = currentMillis + LOG_RECONNECT_INTERVAL;
@@ -32,12 +36,6 @@ void BufferedLogTransport::update(unsigned long currentMillis)
 
 bool BufferedLogTransport::sendOrQueue(const LogRecord& record)
 {
-    if (isConnected() && count == 0) {
-        QueuedLogRecord queued = makeQueuedRecord(record);
-        if (sendNow(queued)) {
-            return true;
-        }
-    }
     queuePush(record);
     return false;
 }
@@ -50,6 +48,11 @@ uint16_t BufferedLogTransport::queuedCount() const
 uint32_t BufferedLogTransport::droppedCount() const
 {
     return dropped;
+}
+
+bool BufferedLogTransport::hasPendingOutput() const
+{
+    return count > 0 || dropped > 0;
 }
 
 QueuedLogRecord BufferedLogTransport::makeQueuedRecord(const LogRecord& record) const

@@ -16,6 +16,9 @@
 //              non volatile storage
 //              display UI
 //              main state machine
+//              logger
+//              OTA update
+//              wireguard VPN
 
 #define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 
@@ -38,6 +41,7 @@
 #include "keyboard.h"
 #include "state_machine.h"
 #include "logger.h"
+#include "websocket_log_transport.h"
 
 uint8_t doorStatePin[] = {3, 4, 5, 6};  // Door state input pins
 uint8_t doorLockPin[] = {0, 1, 2, 3};   // Door lock control pins
@@ -85,11 +89,13 @@ unsigned long statusLineTimeout = 0;            // Status line refresh control
 GpioHAL gpioHal; // GPIO hardware abstraction layer instance
 TimerManager timerManager; // Timer manager instance
 WebSocketManager webSocketManager; // Websocket manager instance
+WebSocketLogTransport webSocketLogTransport; // Remote logger transport instance
 PinStorage pinStorage; // Pin storage instance
 BoxDisplay boxDisplay; // Box display instance
 BoxKeyboard boxKeyboard;
 BoxStateMachine boxStateMachine;
 //CameraHandler cameraHandler; // Camera handler instance
+
 
 DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
 
@@ -580,7 +586,7 @@ void UIcontrolCallback(uint8_t action ) { /*const char* arg, AsyncWebSocketClien
 /****************************/
 void setup() {
   Serial.begin(9600);
-  logger.begin();
+  logger.begin(&webSocketLogTransport);
   Serial.println("\n\n --- B O X   prototype starting! ---\n");
 
 // Initialize I2C
@@ -660,6 +666,7 @@ void setup() {
   } else {
       Serial.println("Failed to obtain time");
   }
+
 
   // Initialize PIN storage after the initial NTP attempt, so date-limited
   // records are evaluated against the best available time.
@@ -846,6 +853,7 @@ void loop() {
     statusLineTimeout = currentMillis + STATUSLINE_REFRESH_INTERVAL;
     uint8_t clientCount = webSocketManager.getClientCount();
     boxDisplay.setCommunicationStatus(clientCount <= 9 ? char(clientCount + '0') : '+');
+    boxDisplay.setLoggerStatus(webSocketLogTransport.hasPendingOutput() ? LOGGER_STATUS_DISCONNECTED : LOGGER_STATUS_CONNECTED);
     boxDisplay.writeStatusLine();
   }
 // captureThread() processes incoming data and calls our callback

@@ -1,0 +1,179 @@
+#include "vpn_manager.h"
+
+#if __has_include(<WireGuard-ESP32.h>)
+#include <WireGuard-ESP32.h>
+#define VPN_MANAGER_HAS_WIREGUARD_ESP32 1
+#elif __has_include(<wireGuard-ESP32.h>)
+#include <wireGuard-ESP32.h>
+#define VPN_MANAGER_HAS_WIREGUARD_ESP32 1
+#elif __has_include(<wireguard-esp32.h>)
+#include <wireguard-esp32.h>
+#define VPN_MANAGER_HAS_WIREGUARD_ESP32 1
+#elif __has_include("WireGuard-ESP32.h")
+#include "WireGuard-ESP32.h"
+#define VPN_MANAGER_HAS_WIREGUARD_ESP32 1
+#elif __has_include("wireGuard-ESP32.h")
+#include "wireGuard-ESP32.h"
+#define VPN_MANAGER_HAS_WIREGUARD_ESP32 1
+#elif __has_include("wireguard-esp32.h")
+#include "wireguard-esp32.h"
+#define VPN_MANAGER_HAS_WIREGUARD_ESP32 1
+#else
+#define VPN_MANAGER_HAS_WIREGUARD_ESP32 0
+#endif
+
+#if VPN_MANAGER_HAS_WIREGUARD_ESP32
+static WireGuard wireGuardClient;
+#endif
+
+VPNManager vpnManager;
+
+namespace {
+bool isTextSet(const char* value)
+{
+    return value != nullptr && value[0] != '\0';
+}
+
+bool isIpSet(const IPAddress& value)
+{
+    return static_cast<uint32_t>(value) != 0;
+}
+}
+
+VPNManager::VPNManager()
+    : client(
+#if VPN_MANAGER_HAS_WIREGUARD_ESP32
+          &wireGuardClient
+#else
+          nullptr
+#endif
+      )
+{
+}
+
+bool VPNManager::begin(const VPNConfig& vpnConfig)
+{
+    disconnect();
+    config = vpnConfig;
+    configured = hasBackend() && isConfigValid(config);
+    return configured;
+}
+
+bool VPNManager::begin(const IPAddress& localIp,
+                       const char* privateKey,
+                       const char* endpointAddress,
+                       const char* publicKey,
+                       uint16_t endpointPort)
+{
+    VPNConfig vpnConfig;
+    vpnConfig.localIp = localIp;
+    vpnConfig.privateKey = privateKey;
+    vpnConfig.endpointAddress = endpointAddress;
+    vpnConfig.publicKey = publicKey;
+    vpnConfig.endpointPort = endpointPort;
+    vpnConfig.useNetworkConfig = false;
+
+    return begin(vpnConfig);
+}
+
+bool VPNManager::begin(const IPAddress& localIp,
+                       const IPAddress& subnet,
+                       const IPAddress& gateway,
+                       const char* privateKey,
+                       const char* endpointAddress,
+                       const char* publicKey,
+                       uint16_t endpointPort)
+{
+    VPNConfig vpnConfig;
+    vpnConfig.localIp = localIp;
+    vpnConfig.subnet = subnet;
+    vpnConfig.gateway = gateway;
+    vpnConfig.privateKey = privateKey;
+    vpnConfig.endpointAddress = endpointAddress;
+    vpnConfig.publicKey = publicKey;
+    vpnConfig.endpointPort = endpointPort;
+    vpnConfig.useNetworkConfig = true;
+
+    return begin(vpnConfig);
+}
+
+bool VPNManager::connect()
+{
+    if (!configured) {
+        return false;
+    }
+
+#if VPN_MANAGER_HAS_WIREGUARD_ESP32
+    auto* wireGuard = static_cast<WireGuard*>(client);
+    if (wireGuard == nullptr) {
+        return false;
+    }
+    if (wireGuard->is_initialized()) {
+        return true;
+    }
+
+    if (config.useNetworkConfig) {
+        return wireGuard->begin(config.localIp,
+                                config.subnet,
+                                config.gateway,
+                                config.privateKey,
+                                config.endpointAddress,
+                                config.publicKey,
+                                config.endpointPort);
+    }
+
+    return wireGuard->begin(config.localIp,
+                            config.privateKey,
+                            config.endpointAddress,
+                            config.publicKey,
+                            config.endpointPort);
+#else
+    return false;
+#endif
+}
+
+bool VPNManager::disconnect()
+{
+#if VPN_MANAGER_HAS_WIREGUARD_ESP32
+    auto* wireGuard = static_cast<WireGuard*>(client);
+    if (wireGuard != nullptr && wireGuard->is_initialized()) {
+        wireGuard->end();
+    }
+#endif
+    return !isConnected();
+}
+
+bool VPNManager::isConnected() const
+{
+#if VPN_MANAGER_HAS_WIREGUARD_ESP32
+    auto* wireGuard = static_cast<WireGuard*>(client);
+    return wireGuard != nullptr && wireGuard->is_initialized();
+#else
+    return false;
+#endif
+}
+
+bool VPNManager::reconnect()
+{
+    disconnect();
+    return connect();
+}
+
+bool VPNManager::hasBackend() const
+{
+#if VPN_MANAGER_HAS_WIREGUARD_ESP32
+    return client != nullptr;
+#else
+    return false;
+#endif
+}
+
+bool VPNManager::isConfigValid(const VPNConfig& vpnConfig) const
+{
+    return isIpSet(vpnConfig.localIp)
+        && isTextSet(vpnConfig.privateKey)
+        && isTextSet(vpnConfig.endpointAddress)
+        && isTextSet(vpnConfig.publicKey)
+        && vpnConfig.endpointPort != 0
+        && (!vpnConfig.useNetworkConfig || isIpSet(vpnConfig.subnet));
+}

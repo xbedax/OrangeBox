@@ -23,9 +23,9 @@
 /*-----------------*/
 // Logical Door Number, lock GPIO pin, door state pin, extender Number, last State
 #define ACTIVE_DOOR_NUMBERS  1                          // Number of active doors, has to correspond with INITIAL_DOOR_MAPPING
-#define INITIAL_DOOR_MAPPING  {  {0, 0, 3, 0, 0}  \
+#define INITIAL_DOOR_MAPPING  {  {0, 1, 3, 0, 0}  \
                                                   }
-#define AMBIENT_PIN 11
+#define AMBIENT_PIN 0
 
 /*-----------------*/
 /* Global settings */
@@ -76,6 +76,14 @@
 #define I2C_SCL_PIN 9
 
 
+// Log server settings
+#ifndef LOG_SERVER_IP
+#define LOG_SERVER_IP "192.168.1.100"
+#endif
+#ifndef LOG_SERVER_PORT
+#define LOG_SERVER_PORT 514
+#endif
+
 /*-----------------*/
 /* Global constants*/
 /*-----------------*/
@@ -94,6 +102,7 @@
 #define COMM_CONTENT "c_content"
 #define COMM_GET_PAGER "get_pager"
 #define COMM_ENORDIS "c_enordis"
+#define COMM_LOG "c_log"
 
 
 #define DEFAULT_MAX_WS_CLIENTS 15

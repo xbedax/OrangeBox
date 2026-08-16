@@ -73,7 +73,7 @@
 // line layout
 #define STIDX_CLIENT     0
 #define STIDX_LINK       1
-#define STIDX_AMBIENT    2
+#define STIDX_LOGGER    2
 #define STIDX_ONLINE     3   
 #define STIDX_MAX        4                              // total number of status indicators, adjust as needed, but make sure to update the status line layout in the display accordingly
 
@@ -89,8 +89,8 @@
 
 
 //ambient ... AMBIENT
-#define AMBIENT_STATUS_ON             'A'         // Ambient light on
-#define AMBIENT_STATUS_OFF            '.'         // Ambient light off
+#define LOGGER_STATUS_CONNECTED       'L'         // Logger connected
+#define LOGGER_STATUS_DISCONNECTED    '.'         // Logger disconnected
 
 //display libraries - lcdI2C
 #ifdef DISP_LCD
@@ -128,8 +128,8 @@ void setCommunicationStatus (char comm_status);
 void setLinkStatus (char link_status);
 // Set list of currently open doors, e.g. "1,3" for doors 1 and 3 open, empty string for all closed
 void setOpenDoorList ( void);
-// Set the ambient light status, e.g. 'A' for on, '.' for off
-void setAmbientStatus (char ambient_status);
+// Set the logger status, e.g. 'L' for connected, '.' for disconnected
+void setLoggerStatus (char logger_status);
 // Set the current password length for display purposes, e.g. when the user is entering the password, this can be used to display the progress of password input
 void setPasswordLength (uint8_t pass_len);
 // Set the current presence code for display purposes, e.g. when the user is verifying their presence code, this can be used to display the code and its validity progress
