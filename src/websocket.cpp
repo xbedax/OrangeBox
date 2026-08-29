@@ -26,7 +26,8 @@ CommandEntry commands[CMD_COUNT] = {};
 void WebSocketManager::notifyClients(const char* command, JsonDocument payload) {
   JsonDocument doc;
   doc["_command_"] = command;  
-  doc["_timestamp_"] = static_cast<long long>(time(nullptr));
+//  doc["_timestamp_"] = static_cast<long long>(time(nullptr));
+  doc["_timestamp_"] = (millis());
   doc["data"] = payload;
   String changeString;
   serializeJson(doc, changeString);
@@ -40,7 +41,7 @@ uint8_t WebSocketManager::getClientCount() const {
 void WebSocketManager::sendMessage(AsyncWebSocketClient* client, const char* command, JsonDocument payload) {
   JsonDocument doc;
   doc["_command_"] = command;
-  doc["_timestamp_"] = static_cast<long long>(time(nullptr));
+  doc["_timestamp_"] = (millis());
   doc["data"] = payload;
   String changeString;
   serializeJson(doc, changeString);

@@ -188,7 +188,7 @@ void Logger::DebugPrint(const char* message, const char* source, uint8_t logArea
     for (int i = 0; i < OLEDROWS - 1; i++){
         logRows[i] = logRows[i+1];
     }
-    logRows[OLEDROWS - 1] = message;
+    logRows[OLEDROWS - 1] = String(message).substring(0, OLEDLINECHARS);
     display.clearDisplay();
     for (int i = 0; i < OLEDROWS; i++){
         display.setCursor(0,(i+1)*OLEDTEXTSIZE);

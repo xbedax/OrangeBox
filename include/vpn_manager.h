@@ -9,8 +9,33 @@
 #ifndef VPN_GATEWAY_PORT
 #define VPN_GATEWAY_PORT 8080
 #endif
+// Fallback only. Project config/credentials should set this per box instance.
 #ifndef VPN_REMOTE_BIND_PORT
-#define VPN_REMOTE_BIND_PORT 8085
+#define VPN_REMOTE_BIND_PORT 8084
+#endif
+#ifndef VPN_SERVER_CLIENT_ALIVE_INTERVAL_SEC
+#define VPN_SERVER_CLIENT_ALIVE_INTERVAL_SEC 7
+#endif
+#ifndef VPN_SERVER_CLIENT_ALIVE_COUNT_MAX
+#define VPN_SERVER_CLIENT_ALIVE_COUNT_MAX 3
+#endif
+#ifndef VPN_SERVER_STALE_SESSION_WINDOW_SEC
+#define VPN_SERVER_STALE_SESSION_WINDOW_SEC \
+    (VPN_SERVER_CLIENT_ALIVE_INTERVAL_SEC * VPN_SERVER_CLIENT_ALIVE_COUNT_MAX)
+#endif
+#ifndef VPN_CLIENT_KEEPALIVE_MARGIN_SEC
+#define VPN_CLIENT_KEEPALIVE_MARGIN_SEC 9
+#endif
+#ifndef VPN_CLIENT_KEEPALIVE_INTERVAL_SEC
+#define VPN_CLIENT_KEEPALIVE_INTERVAL_SEC \
+    (VPN_SERVER_STALE_SESSION_WINDOW_SEC + VPN_CLIENT_KEEPALIVE_MARGIN_SEC)
+#endif
+#ifndef VPN_STALE_REMOTE_LISTENER_GRACE_SEC
+#define VPN_STALE_REMOTE_LISTENER_GRACE_SEC 14
+#endif
+#ifndef VPN_STALE_REMOTE_LISTENER_COOLDOWN_MS
+#define VPN_STALE_REMOTE_LISTENER_COOLDOWN_MS \
+    ((VPN_SERVER_STALE_SESSION_WINDOW_SEC + VPN_STALE_REMOTE_LISTENER_GRACE_SEC) * 1000UL)
 #endif
 #ifndef VPN_USERNAME
 #define VPN_USERNAME "some_name"
@@ -31,6 +56,17 @@
 enum class VPNAuthMode : uint8_t {
     Password,
     PublicKey
+};
+
+enum class VPNConnectionState : uint8_t {
+    Unconfigured,
+    Disconnected,
+    Connecting,
+    Connected,
+    StaleRemoteListener,
+    Error,
+    BackendUnavailable,
+    ConfigInvalid
 };
 
 struct VPNTunnelMapping {
@@ -58,9 +94,10 @@ struct VPNConfig {
 
     VPNTunnelMapping tunnel;
 
-    uint16_t keepAliveIntervalSec = 30;
+    uint16_t keepAliveIntervalSec = VPN_CLIENT_KEEPALIVE_INTERVAL_SEC;
 
     uint32_t reconnectDelayMs = 5000;
+    uint32_t staleRemoteListenerCooldownMs = VPN_STALE_REMOTE_LISTENER_COOLDOWN_MS;
     uint8_t maxReconnectAttempts = 5;
     uint16_t connectionTimeoutSec = 30;
     uint16_t bufferSize = 8192;
@@ -83,18 +120,25 @@ public:
     bool reconnect();
     void update();
 
+    VPNConnectionState getState() const;
     int getBoundPort() const;
     String getStateString() const;
+    uint32_t getNextReconnectDelayMs() const;
 
 private:
     void* client = nullptr;
     VPNConfig config;
     bool configured = false;
     bool initialized = false;
+    VPNConnectionState state = VPNConnectionState::Unconfigured;
+    uint32_t nextConnectAttemptMs = 0;
 
     bool hasBackend() const;
     bool isConfigValid(const VPNConfig& vpnConfig) const;
     bool applyConfig(const VPNConfig& vpnConfig);
+    bool canAttemptConnect(uint32_t now) const;
+    bool backendLastFailureWasStaleListener() const;
+    void scheduleReconnect(VPNConnectionState failureState, uint32_t delayMs);
 };
 
 extern VPNManager vpnManager;

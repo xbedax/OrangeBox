@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "Box_wiegand",
+			"path": "../Box_wiegand"
+		}
+	],
+	"settings": {}
+}

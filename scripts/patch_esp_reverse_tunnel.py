@@ -178,6 +178,163 @@ replace_first(
 """,
 )
 
+ssh_session_header = libdeps / "ESP-Reverse_Tunneling_Libssh2" / "src" / "ssh_session.h"
+replace_first(
+    ssh_session_header,
+    [
+        """  // True if session is live and socket is valid.
+  bool isConnected() const;
+
+  // Number of consecutive keepalive failures seen since the last success.
+""",
+    ],
+    """  // True if session is live and socket is valid.
+  bool isConnected() const;
+  bool lastConnectFailureWasReverseListener() const {
+    return lastConnectFailure_ == kConnectFailureReverseListener;
+  }
+
+  // Number of consecutive keepalive failures seen since the last success.
+""",
+)
+replace_first(
+    ssh_session_header,
+    [
+        """  std::vector<ListenerEntry> listeners_;
+  int boundPort_ = -1;
+  int keepAliveFailures_ = 0;
+""",
+    ],
+    """  std::vector<ListenerEntry> listeners_;
+  int boundPort_ = -1;
+  static constexpr int kConnectFailureNone = 0;
+  static constexpr int kConnectFailureTcp = 1;
+  static constexpr int kConnectFailureHandshake = 2;
+  static constexpr int kConnectFailureHostKey = 3;
+  static constexpr int kConnectFailureAuth = 4;
+  static constexpr int kConnectFailureReverseListener = 5;
+  int lastConnectFailure_ = kConnectFailureNone;
+  int keepAliveFailures_ = 0;
+""",
+)
+ssh_tunnel_header = libdeps / "ESP-Reverse_Tunneling_Libssh2" / "src" / "ssh_tunnel.h"
+replace_first(
+    ssh_tunnel_header,
+    [
+        """  String getStateString();
+  int getBoundPort() const;
+
+  // Statistics
+""",
+    ],
+    """  String getStateString();
+  int getBoundPort() const;
+  bool lastConnectFailureWasReverseListener() const {
+    return session_.lastConnectFailureWasReverseListener();
+  }
+
+  // Statistics
+""",
+)
+replace_first(
+    ssh_session,
+    [
+        """bool SSHSession::connect(SSHConfiguration *config) {
+  config_ = config;
+  resetAcceptState();
+""",
+    ],
+    """bool SSHSession::connect(SSHConfiguration *config) {
+  config_ = config;
+  resetAcceptState();
+  lastConnectFailure_ = kConnectFailureNone;
+""",
+)
+replace_first(
+    ssh_session,
+    [
+        """  if (!tcpConnect(sshConfig)) {
+    return false;
+  }
+""",
+    ],
+    """  if (!tcpConnect(sshConfig)) {
+    lastConnectFailure_ = kConnectFailureTcp;
+    return false;
+  }
+""",
+)
+replace_first(
+    ssh_session,
+    [
+        """  if (!handshake()) {
+    cleanupSession();
+    return false;
+  }
+""",
+    ],
+    """  if (!handshake()) {
+    lastConnectFailure_ = kConnectFailureHandshake;
+    cleanupSession();
+    return false;
+  }
+""",
+)
+replace_first(
+    ssh_session,
+    [
+        """  if (!verifyHostKey(sshConfig)) {
+    LOG_E("SSH", "Host key verification failed");
+    cleanupSession();
+    return false;
+  }
+""",
+    ],
+    """  if (!verifyHostKey(sshConfig)) {
+    lastConnectFailure_ = kConnectFailureHostKey;
+    LOG_E("SSH", "Host key verification failed");
+    cleanupSession();
+    return false;
+  }
+""",
+)
+replace_first(
+    ssh_session,
+    [
+        """  if (!authenticate(sshConfig)) {
+    LOG_E("SSH", "Authentication failed");
+    cleanupSession();
+    return false;
+  }
+""",
+    ],
+    """  if (!authenticate(sshConfig)) {
+    lastConnectFailure_ = kConnectFailureAuth;
+    LOG_E("SSH", "Authentication failed");
+    cleanupSession();
+    return false;
+  }
+""",
+)
+replace_first(
+    ssh_session,
+    [
+        """  if (!createListeners(config_)) {
+    LOG_E("SSH", "Failed to create reverse listeners");
+    cleanupSession();
+    return false;
+  }
+""",
+    ],
+    """  if (!createListeners(config_)) {
+    lastConnectFailure_ = kConnectFailureReverseListener;
+    LOG_E("SSH", "Failed to create reverse listeners");
+    cleanupSession();
+    return false;
+  }
+""",
+)
+
 mbedtls_backend = libdeps / "libssh2_esp" / "src" / "mbedtls.c"
 ensure_include_after(mbedtls_backend, "#include <stdlib.h>\n", "#include <stdio.h>")
 replace_first(

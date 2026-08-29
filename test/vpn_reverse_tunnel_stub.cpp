@@ -34,7 +34,9 @@ void setLocalHostFromWiFi()
 
 void handleRoot()
 {
-    helloServer.send(200, "text/plain", "hello world\n");
+    char buffer[128];
+    snprintf(buffer, sizeof(buffer), "Hello from ESP32! Timestamp: %lu Local IP: %s, RSSI: %d dBm\n", millis() , localHost, WiFi.RSSI());
+    helloServer.send(200, "text/plain", buffer);
 }
 
 bool connectWiFi()
@@ -76,7 +78,7 @@ bool startTunnel()
     vpnConfig.tunnel.remoteBindPort = remoteHttpPort;
     vpnConfig.tunnel.localHost = localHost;
     vpnConfig.tunnel.localPort = localHttpPort;
-    vpnConfig.keepAliveIntervalSec = 30;
+    vpnConfig.keepAliveIntervalSec = VPN_CLIENT_KEEPALIVE_INTERVAL_SEC;
     vpnConfig.reconnectDelayMs = 5000;
     vpnConfig.maxReconnectAttempts = 10;
     vpnConfig.connectionTimeoutSec = 30;

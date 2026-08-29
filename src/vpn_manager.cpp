@@ -31,6 +31,11 @@ bool isPortSet(uint16_t port)
 {
     return port != 0;
 }
+
+bool timeReached(uint32_t now, uint32_t timestamp)
+{
+    return timestamp == 0 || static_cast<int32_t>(now - timestamp) >= 0;
+}
 }
 
 VPNManager::VPNManager()
@@ -50,7 +55,22 @@ bool VPNManager::begin(const VPNConfig& vpnConfig)
 
     config = vpnConfig;
     initialized = false;
-    configured = hasBackend() && isConfigValid(config) && applyConfig(config);
+    nextConnectAttemptMs = 0;
+
+    if (!hasBackend()) {
+        configured = false;
+        state = VPNConnectionState::BackendUnavailable;
+        return false;
+    }
+
+    if (!isConfigValid(config)) {
+        configured = false;
+        state = VPNConnectionState::ConfigInvalid;
+        return false;
+    }
+
+    configured = applyConfig(config);
+    state = configured ? VPNConnectionState::Disconnected : VPNConnectionState::ConfigInvalid;
     return configured;
 }
 
@@ -61,22 +81,45 @@ bool VPNManager::connect()
     }
 
 #if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    uint32_t now = millis();
+    if (!canAttemptConnect(now)) {
+        return false;
+    }
+
     auto* tunnel = static_cast<SSHTunnel*>(client);
     if (tunnel == nullptr) {
+        state = VPNConnectionState::BackendUnavailable;
         return false;
     }
     if (tunnel->isConnected()) {
+        state = VPNConnectionState::Connected;
+        nextConnectAttemptMs = 0;
         return true;
     }
     if (!initialized) {
         initialized = tunnel->init();
         if (!initialized) {
+            scheduleReconnect(VPNConnectionState::Error, config.reconnectDelayMs);
             return false;
         }
     }
 
-    return tunnel->connectSSH();
+    state = VPNConnectionState::Connecting;
+    if (tunnel->connectSSH()) {
+        state = VPNConnectionState::Connected;
+        nextConnectAttemptMs = 0;
+        return true;
+    }
+
+    if (backendLastFailureWasStaleListener()) {
+        scheduleReconnect(VPNConnectionState::StaleRemoteListener,
+                          config.staleRemoteListenerCooldownMs);
+    } else {
+        scheduleReconnect(VPNConnectionState::Error, config.reconnectDelayMs);
+    }
+    return false;
 #else
+    state = VPNConnectionState::BackendUnavailable;
     return false;
 #endif
 }
@@ -89,6 +132,8 @@ bool VPNManager::disconnect()
         tunnel->disconnect();
     }
 #endif
+    state = configured ? VPNConnectionState::Disconnected : VPNConnectionState::Unconfigured;
+    nextConnectAttemptMs = 0;
     return !isConnected();
 }
 
@@ -111,15 +156,46 @@ bool VPNManager::reconnect()
 void VPNManager::update()
 {
 #if VPN_MANAGER_HAS_REVERSE_TUNNEL
-    if (!initialized) {
+    if (!configured) {
         return;
     }
 
     auto* tunnel = static_cast<SSHTunnel*>(client);
-    if (tunnel != nullptr) {
+    if (tunnel == nullptr) {
+        state = VPNConnectionState::BackendUnavailable;
+        return;
+    }
+
+    uint32_t now = millis();
+    if (!initialized || state == VPNConnectionState::Disconnected ||
+        state == VPNConnectionState::Error ||
+        state == VPNConnectionState::StaleRemoteListener) {
+        if (canAttemptConnect(now)) {
+            connect();
+        }
+        return;
+    }
+
+    if (state == VPNConnectionState::Connected || tunnel->isConnected()) {
         tunnel->loop();
+        if (tunnel->isConnected()) {
+            state = VPNConnectionState::Connected;
+            return;
+        }
+
+        if (backendLastFailureWasStaleListener()) {
+            scheduleReconnect(VPNConnectionState::StaleRemoteListener,
+                              config.staleRemoteListenerCooldownMs);
+        } else {
+            scheduleReconnect(VPNConnectionState::Error, config.reconnectDelayMs);
+        }
     }
 #endif
+}
+
+VPNConnectionState VPNManager::getState() const
+{
+    return state;
 }
 
 int VPNManager::getBoundPort() const
@@ -134,12 +210,39 @@ int VPNManager::getBoundPort() const
 
 String VPNManager::getStateString() const
 {
-#if VPN_MANAGER_HAS_REVERSE_TUNNEL
-    auto* tunnel = static_cast<SSHTunnel*>(client);
-    return tunnel != nullptr ? tunnel->getStateString() : String("backend-unavailable");
-#else
-    return String("backend-unavailable");
-#endif
+    switch (state) {
+    case VPNConnectionState::Unconfigured:
+        return String("Unconfigured");
+    case VPNConnectionState::Disconnected:
+        return String("Disconnected");
+    case VPNConnectionState::Connecting:
+        return String("Connecting");
+    case VPNConnectionState::Connected:
+        return String("Connected");
+    case VPNConnectionState::StaleRemoteListener:
+        return String("StaleRemoteListener");
+    case VPNConnectionState::Error:
+        return String("Error");
+    case VPNConnectionState::BackendUnavailable:
+        return String("BackendUnavailable");
+    case VPNConnectionState::ConfigInvalid:
+        return String("ConfigInvalid");
+    default:
+        return String("Unknown");
+    }
+}
+
+uint32_t VPNManager::getNextReconnectDelayMs() const
+{
+    if (nextConnectAttemptMs == 0) {
+        return 0;
+    }
+
+    uint32_t now = millis();
+    if (timeReached(now, nextConnectAttemptMs)) {
+        return 0;
+    }
+    return nextConnectAttemptMs - now;
 }
 
 bool VPNManager::hasBackend() const
@@ -162,6 +265,7 @@ bool VPNManager::isConfigValid(const VPNConfig& vpnConfig) const
         || !isPortSet(vpnConfig.tunnel.localPort)
         || vpnConfig.keepAliveIntervalSec == 0
         || vpnConfig.reconnectDelayMs == 0
+        || vpnConfig.staleRemoteListenerCooldownMs == 0
         || vpnConfig.maxReconnectAttempts == 0
         || vpnConfig.connectionTimeoutSec == 0
         || vpnConfig.bufferSize == 0
@@ -178,6 +282,27 @@ bool VPNManager::isConfigValid(const VPNConfig& vpnConfig) const
     }
 
     return isTextSet(vpnConfig.privateKey) && isTextSet(vpnConfig.publicKey);
+}
+
+bool VPNManager::canAttemptConnect(uint32_t now) const
+{
+    return timeReached(now, nextConnectAttemptMs);
+}
+
+bool VPNManager::backendLastFailureWasStaleListener() const
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* tunnel = static_cast<SSHTunnel*>(client);
+    return tunnel != nullptr && tunnel->lastConnectFailureWasReverseListener();
+#else
+    return false;
+#endif
+}
+
+void VPNManager::scheduleReconnect(VPNConnectionState failureState, uint32_t delayMs)
+{
+    state = failureState;
+    nextConnectAttemptMs = millis() + delayMs;
 }
 
 bool VPNManager::applyConfig(const VPNConfig& vpnConfig)

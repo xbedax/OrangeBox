@@ -5,8 +5,8 @@
 //              single thread
 //              spi camera - ArduCam Mega (EXCLUDED TEMPORARILY)
 //              web page streaming - motion jpeg (EXCLUDED TEMPORARILY)
-//              I2C display handler (OLED)
-//              I2C password handler
+//              I2C debug display handler (OLED)
+//              I2C keyboard handler
 //              I2C display handler (text LCD)
 //              websocket
 //              wifi reconnect
@@ -18,7 +18,10 @@
 //              main state machine
 //              logger
 //              OTA update
-//              wireguard VPN
+//              reverse SSH tunnel VPN
+//              NTP time sync
+//              RTC
+//              internal diagnostics
 
 #define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 
@@ -42,6 +45,9 @@
 #include "state_machine.h"
 #include "logger.h"
 #include "websocket_log_transport.h"
+#include "vpn_manager.h"
+#include "box_rtc.h"
+#include "diagnostics.h"
 
 uint8_t doorStatePin[] = {3, 4, 5, 6};  // Door state input pins
 uint8_t doorLockPin[] = {0, 1, 2, 3};   // Door lock control pins
@@ -78,6 +84,7 @@ unsigned long linkStatusMillis = 0;                   // wifi reconnect timer
 const long linkStatusInterval = LINK_CHECK_INTERVAL;                 // wifi reconnect delay
 keyboardStatus keyboardState;                   // Structure to keep current keyboard info
 unsigned long statusLineTimeout = 0;            // Status line refresh control
+char vpnLocalHost[16] = "127.0.0.1";
 
 
 // Common settings      ### cele smazat
@@ -94,6 +101,7 @@ PinStorage pinStorage; // Pin storage instance
 BoxDisplay boxDisplay; // Box display instance
 BoxKeyboard boxKeyboard;
 BoxStateMachine boxStateMachine;
+BoxRtc boxRtc;
 //CameraHandler cameraHandler; // Camera handler instance
 
 
@@ -102,6 +110,9 @@ DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
 //  void processPassword();         ### asi smazat
 void handleDueActions(uint8_t action, const char* arg);
 void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis);
+void refreshVpnLocalHost();
+bool startVpn();
+String buildDiagnosticsPage();
 
 uint32_t jsonUintOr(JsonObj data, const char* key, uint32_t fallback)
 {
@@ -331,6 +342,38 @@ void handleGetPager(AsyncWebSocketClient *sender, JsonObj data)
   webSocketManager.sendMessage(sender, COMM_CONTENT, response);
 }
 
+void handleGetDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
+{
+  (void)data;
+  JsonDocument response;
+  response["diagnostics"] = boxDiagnostics.showStatistics(DiagnosticFormat::Html);
+  response["diagnostics_text"] = boxDiagnostics.showStatistics(DiagnosticFormat::Text);
+  response["diagnostics_json"] = boxDiagnostics.statisticsJson();
+  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+}
+
+void handleSnapshotDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
+{
+  (void)data;
+  JsonDocument response;
+  bool stored = boxDiagnostics.snapshotStatistics();
+  response[MSG_LASTRESULT] = stored ? "Diagnostic snapshot stored" : "Diagnostic snapshot failed";
+  response["diagnostic_snapshot_count"] = boxDiagnostics.snapshotCount();
+  response["diagnostic_snapshots"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
+  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+}
+
+void handleGetDiagnosticSnapshots(AsyncWebSocketClient *sender, JsonObj data)
+{
+  (void)data;
+  JsonDocument response;
+  response["diagnostic_snapshot_count"] = boxDiagnostics.snapshotCount();
+  response["diagnostic_snapshots"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
+  response["diagnostic_snapshots_text"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Text);
+  response["diagnostic_snapshots_json"] = boxDiagnostics.snapshotsJson();
+  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+}
+
 
 void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
 {
@@ -512,33 +555,6 @@ void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
   }
 } // handleSetPin
 
-/* ### nejspis k prdu, smazat
-// Password processing
-void processPassword() {
-  if (!pass_ready)
-    return;
-
-  Serial.print("Heslo: ");
-  for (uint8_t i = 0; i < pass_len; i++)
-    Serial.print(pass[i]);
-  Serial.println();
-
-    char passStr[15];         // Max IP string length is 15 chars + null terminator
-    strcpy ( passStr, "Heslo:" );
-    for (uint8_t i = 0; i < pass_len; i++){
-      char passNum[4];
-      sprintf(passNum, "%d", pass[i]); 
-      strcat ( passStr, passNum );
-    }
-    logger.logPrint(SEVERITY_DEBUG, passStr, BOX_HOST_NAME, LOGAREA_ACCESS);
-    
-
-  // TODO: validace, akce, atd.
-
-  pass_len = 0;
-  pass_ready = false;
-} // processPassword
-*/
 
 void handleCapture(AsyncWebServerRequest *request) {
   while (xSemaphoreTake(imageMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
@@ -551,6 +567,26 @@ void handleCapture(AsyncWebServerRequest *request) {
     xSemaphoreGive(imageMutex);
     request->send(503, "text/plain", "Image not ready");
   }
+} // handleCapture
+
+String buildDiagnosticsPage() {
+  String page;
+  page.reserve(2800);
+  page += F("<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">");
+  page += F("<title>BOX diagnostics</title><style>");
+  page += F("body{font-family:Arial,sans-serif;max-width:920px;margin:0 auto;padding:24px;background:#f5f7f8;color:#182024}");
+  page += F("h1{font-size:1.8rem;margin:0 0 18px}h2{font-size:1.2rem;margin:24px 0 8px}");
+  page += F("table{width:100%;border-collapse:collapse;background:#fff}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #d9e0e4}");
+  page += F("th{background:#143642;color:#fff}code{font-family:Consolas,monospace}p{color:#52616a}");
+  page += F("a.button{display:inline-block;margin:0 8px 16px 0;padding:8px 10px;background:#143642;color:#fff;text-decoration:none}");
+  page += F("</style></head><body><h1>BOX diagnostics</h1>");
+  page += F("<a class=\"button\" href=\"/diagnostics/snapshot\">Store snapshot</a>");
+  page += F("<a class=\"button\" href=\"/diagnostics.txt\">Text</a>");
+  page += F("<a class=\"button\" href=\"/diagnostics.json\">JSON</a>");
+  page += boxDiagnostics.showStatistics(DiagnosticFormat::Html);
+  page += boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
+  page += F("</body></html>");
+  return page;
 }
 
 void registerWebServerRoutes(AsyncWebServer &server) {
@@ -565,6 +601,90 @@ void registerWebServerRoutes(AsyncWebServer &server) {
 
   // Single capture endpoint (captures one image on demand)
   server.on("/capture", AsyncWebRequestMethod::HTTP_GET, handleCapture);
+
+  server.on("/diagnostics", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/html", buildDiagnosticsPage());
+  });
+
+  server.on("/diagnostics.txt", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
+    String output = boxDiagnostics.showStatistics(DiagnosticFormat::Text);
+    output += '\n';
+    output += boxDiagnostics.showSnapshots(DiagnosticFormat::Text);
+    request->send(200, "text/plain", output);
+  });
+
+  server.on("/diagnostics.json", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "application/json", boxDiagnostics.statisticsJson());
+  });
+
+  server.on("/diagnostics/snapshot", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
+    boxDiagnostics.snapshotStatistics();
+    request->redirect("/diagnostics");
+  });
+
+  server.on("/diagnostics/snapshots.json", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "application/json", boxDiagnostics.snapshotsJson());
+  });
+}
+
+void refreshVpnLocalHost() {
+  IPAddress ip = WiFi.localIP();
+  snprintf(vpnLocalHost, sizeof(vpnLocalHost), "%u.%u.%u.%u",
+           ip[0], ip[1], ip[2], ip[3]);
+}
+
+bool startVpn() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return false;
+  }
+
+  refreshVpnLocalHost();
+
+  VPNConfig vpnConfig;
+  vpnConfig.sshHost = VPN_GATEWAY_HOST;
+  vpnConfig.sshPort = VPN_GATEWAY_PORT;
+  vpnConfig.username = VPN_USERNAME;
+  vpnConfig.authMode = VPNAuthMode::PublicKey;
+  vpnConfig.privateKey = VPN_PRIVATE_KEY;
+  vpnConfig.publicKey = VPN_PUBLIC_KEY;
+  vpnConfig.keyPassphrase = "";
+  vpnConfig.verifyHostKey = true;
+  vpnConfig.hostKeyFingerprint = VPN_GATEWAY_FINGERPRINT;
+  vpnConfig.hostKeyType = VPN_GATEWAY_KEY_TYPE;
+  vpnConfig.tunnel.remoteBindHost = "127.0.0.1";
+  vpnConfig.tunnel.remoteBindPort = VPN_REMOTE_BIND_PORT;
+  vpnConfig.tunnel.localHost = vpnLocalHost;
+  vpnConfig.tunnel.localPort = 80;
+  vpnConfig.keepAliveIntervalSec = VPN_CLIENT_KEEPALIVE_INTERVAL_SEC;
+  vpnConfig.reconnectDelayMs = 5000;
+  vpnConfig.staleRemoteListenerCooldownMs = VPN_STALE_REMOTE_LISTENER_COOLDOWN_MS;
+  vpnConfig.maxReconnectAttempts = 10;
+  vpnConfig.connectionTimeoutSec = 30;
+  vpnConfig.bufferSize = 8192;
+  vpnConfig.maxChannels = 5;
+  vpnConfig.debugEnabled = false;
+
+  if (!vpnManager.begin(vpnConfig)) {
+    logger.logPrint(SEVERITY_ERROR, "VPN begin failed: " + vpnManager.getStateString(), BOX_HOST_NAME, LOGAREA_COMM);
+    return false;
+  }
+
+  logger.logPrint(SEVERITY_INFO,
+                  "VPN configured: 127.0.0.1:" + String(VPN_REMOTE_BIND_PORT) +
+                  " -> " + String(vpnLocalHost) + ":80",
+                  BOX_HOST_NAME, LOGAREA_COMM);
+
+  if (!vpnManager.connect()) {
+    logger.logPrint(SEVERITY_WARNING,
+                    "VPN connect deferred: " + vpnManager.getStateString(),
+                    BOX_HOST_NAME, LOGAREA_COMM);
+    return false;
+  }
+
+  logger.logPrint(SEVERITY_INFO,
+                  "VPN connected, remote port " + String(vpnManager.getBoundPort()),
+                  BOX_HOST_NAME, LOGAREA_COMM);
+  return true;
 }
 
 void UIcontrolCallback(uint8_t action ) { /*const char* arg, AsyncWebSocketClient *sender*/
@@ -585,13 +705,38 @@ void UIcontrolCallback(uint8_t action ) { /*const char* arg, AsyncWebSocketClien
 /****************************/
 /****************************/
 void setup() {
+  delay(1000); // Small delay to allow any pending operations to complete before starting Serial
   Serial.begin(9600);
   logger.begin(&webSocketLogTransport);
+  boxDiagnostics.begin();
   Serial.println("\n\n --- B O X   prototype starting! ---\n");
 
 // Initialize I2C
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
-  Wire.setClock(100000);  // klasika, žádný spěch
+  Wire.setClock(100000);  // klasika, zadny spech
+
+  if (boxRtc.begin(RTC_I2C_ADDRESS, &Wire)) {
+    if (boxRtc.setSystemTimeFromRtc()) {
+      logger.logPrint(SEVERITY_INFO, "System time loaded from RTC\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+    } else {
+      logger.logPrint(SEVERITY_WARNING, "RTC available, but time is not trusted yet\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+    }
+  } else {
+    logger.logPrint(SEVERITY_WARNING, "RTC not found at 0x" + String(RTC_I2C_ADDRESS, HEX) + "\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  }
+
+  time_t boxNow = time(nullptr);
+  Serial.print("Box current time epoch: ");
+  Serial.println(static_cast<long>(boxNow));
+
+  struct tm boxTimeInfo;
+  if (localtime_r(&boxNow, &boxTimeInfo) != nullptr) {
+    char boxTimeBuffer[24];
+    if (strftime(boxTimeBuffer, sizeof(boxTimeBuffer), "%Y-%m-%d %H:%M:%S", &boxTimeInfo) > 0) {
+      Serial.print("Box current time: ");
+      Serial.println(boxTimeBuffer);
+    }
+  }
 
   boxDisplay.displayInit(&gpioHal);
   logger.logPrint(SEVERITY_INFO, "Display initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
@@ -657,18 +802,14 @@ void setup() {
     logger.logPrint(SEVERITY_ERROR, "WiFi FAILED!\n", BOX_HOST_NAME, LOGAREA_COMM);
   }
 
- // Configure and start NTP for time synchronization
-  configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  struct tm timeinfo;
-  if (getLocalTime(&timeinfo)) {
-      Serial.println("Current time:");
-      Serial.printf("%02d:%02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+  if (boxRtc.configureNtp(ntpServer, gmtOffset_sec, daylightOffset_sec, RTC_NTP_SYNC_INTERVAL_MS)) {
+    logger.logPrint(SEVERITY_INFO, "NTP synchronization scheduled\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
   } else {
-      Serial.println("Failed to obtain time");
+    logger.logPrint(SEVERITY_WARNING, "NTP synchronization not configured\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
   }
 
 
-  // Initialize PIN storage after the initial NTP attempt, so date-limited
+  // Initialize PIN storage after the RTC load/NTP setup, so date-limited
   // records are evaluated against the best available time.
   pinStorage.begin();
   logger.logPrint(SEVERITY_INFO, "PIN storage init\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
@@ -696,11 +837,15 @@ void setup() {
   webSocketManager.registerMessageHandler(COMM_GET_DOOR_STATE,   handleGetDoors);           // get doors state
   webSocketManager.registerMessageHandler(COMM_GET_AMBIENT, handleGetAmbient);              // get ambient light state 
   webSocketManager.registerMessageHandler(COMM_GET_PAGER, handleGetPager);                  // get pager state
+  webSocketManager.registerMessageHandler(COMM_GET_DIAGNOSTICS, handleGetDiagnostics);
+  webSocketManager.registerMessageHandler(COMM_SNAPSHOT_DIAGNOSTICS, handleSnapshotDiagnostics);
+  webSocketManager.registerMessageHandler(COMM_GET_DIAGNOSTIC_SNAPSHOTS, handleGetDiagnosticSnapshots);
 
   logger.logPrint(SEVERITY_INFO, "WebSocket Initialized\n", BOX_HOST_NAME, LOGAREA_COMM);
   // Start server  
   webserver.begin();
   logger.logPrint(SEVERITY_INFO, "Webserver started!\n", BOX_HOST_NAME, LOGAREA_COMM);
+  startVpn();
 
   /*
 // set I/O pins
@@ -709,6 +854,7 @@ void setup() {
   pinMode(doorPin, INPUT);
   */
   logger.logPrint(SEVERITY_INFO, "SETUP COMPLETE!\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  boxDiagnostics.snapshotStatistics();
 
 }  //setup
 
@@ -815,6 +961,7 @@ void checkLinkStatus() {
     if (WiFi.status() != WL_CONNECTED ) {
       if (wifiState) {
         Serial.println("WiFi lost");
+        vpnManager.disconnect();
       }
       wifiState = 0;        
       boxDisplay.setLinkStatus(ONLINE_STATUS_OFFLINE);
@@ -824,11 +971,13 @@ void checkLinkStatus() {
       }
       wifiState = 1;
       boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
+      startVpn();
     }
   } else {
     if (!wifiState) {
       Serial.println("WiFi restored");
       wifiState = 1;
+      startVpn();
     }
     boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
   }
@@ -838,12 +987,14 @@ void checkLinkStatus() {
 void loop() {
   currentMillis = millis();
 
+  boxRtc.update(currentMillis);
   timerManager.update(currentMillis);
   boxKeyboard.handleKeyboard(&keyboardState, &boxStateMachine);
   boxStateMachine.update(currentMillis);
   logger.update(currentMillis);
 
   webSocketManager.update(currentMillis);
+  vpnManager.update();
   ElegantOTA.loop();
   if (currentMillis > linkStatusMillis) {
     checkLinkStatus();

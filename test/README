@@ -63,3 +63,35 @@ websocket-like shape with `_command_` and `data`, or the data object directly:
 
 After each action it dumps the active cache and the raw `pins` Preferences
 records, including HEAD/TAIL links.
+
+QR scanner UART stub
+--------------------
+
+`pio run -e qr-scanner-stub -t upload` builds/uploads a small ESP32 sketch
+for testing a UART barcode/QR scanner module.
+
+The stub is configured for an ESP32-S3 board with the console on USB CDC.
+When `QR_SCANNER_UART_NUM` is `0`, the scanner uses `Serial0` so the CDC
+console remains available as `Serial`.
+
+Default UART settings are in `include/config.h` and can be overridden from
+`box_setup.h` or build flags:
+
+- `QR_SCANNER_UART_NUM`, `QR_SCANNER_BAUD`
+- `QR_SCANNER_RX_PIN`, `QR_SCANNER_TX_PIN`
+- `QR_SCANNER_SWITCH_PIN`, `QR_SCANNER_SWITCH_ACTIVE_HIGH`
+- `QR_SCANNER_ACTIVATE_COMMAND`, `QR_SCANNER_DEACTIVATE_COMMAND`
+- `QR_SCANNER_RESPONSE_WINDOW_MS`, `QR_SCANNER_SCAN_TIMEOUT_MS`
+
+Serial monitor commands:
+
+- `start [timeout_ms]` activates using configured command/switch and waits
+  for a scanned frame.
+- `act <payload>` sends a custom activation payload and waits for a scan.
+- `cmd <payload>` sends a command and prints frames received during the
+  response window.
+- `raw <payload>` sends bytes without changing scanner state.
+- `stop [payload]` deactivates, optionally with a custom payload.
+
+Payloads can be text with escapes (`\r`, `\n`, `\xHH`) or hex bytes, e.g.
+`hex: 16 54 0D`.
