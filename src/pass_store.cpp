@@ -421,6 +421,11 @@ bool PinStorage::begin()
     return true;
 }
 
+bool PinStorage::refreshCache()
+{
+    return rebuildCache();
+}
+
 #ifdef BOX_SIMULATION
 const std::vector<CacheRecord>& PinStorage::debugCache() const
 {

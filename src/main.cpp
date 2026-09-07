@@ -705,7 +705,7 @@ void UIcontrolCallback(uint8_t action ) { /*const char* arg, AsyncWebSocketClien
 /****************************/
 /****************************/
 void setup() {
-  delay(1000); // Small delay to allow any pending operations to complete before starting Serial
+  delay(3000); // Small delay to allow any pending operations to complete before starting Serial
   Serial.begin(9600);
   logger.begin(&webSocketLogTransport);
   boxDiagnostics.begin();
@@ -716,8 +716,14 @@ void setup() {
   Wire.setClock(100000);  // klasika, zadny spech
 
   if (boxRtc.begin(RTC_I2C_ADDRESS, &Wire)) {
+    Serial.print("RTC OSF flag: ");
+    Serial.println(boxRtc.hasLostPowerFlag() ? "set" : "clear");
     if (boxRtc.setSystemTimeFromRtc()) {
-      logger.logPrint(SEVERITY_INFO, "System time loaded from RTC\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+      if (boxRtc.hasLostPowerFlag()) {
+        logger.logPrint(SEVERITY_WARNING, "System time loaded from RTC with OSF set; waiting for NTP correction\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+      } else {
+        logger.logPrint(SEVERITY_INFO, "System time loaded from RTC\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+      }
     } else {
       logger.logPrint(SEVERITY_WARNING, "RTC available, but time is not trusted yet\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
     }
@@ -987,7 +993,9 @@ void checkLinkStatus() {
 void loop() {
   currentMillis = millis();
 
-  boxRtc.update(currentMillis);
+  if (boxRtc.update(currentMillis)) {
+    pinStorage.refreshCache();
+  }
   timerManager.update(currentMillis);
   boxKeyboard.handleKeyboard(&keyboardState, &boxStateMachine);
   boxStateMachine.update(currentMillis);

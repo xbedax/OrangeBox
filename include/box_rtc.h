@@ -18,6 +18,7 @@ public:
 
   bool isAvailable() const;
   bool hasValidRtcTime() const;
+  bool hasLostPowerFlag() const;
   uint8_t getI2cAddress() const;
 
   void adjust(const DateTime& dt);
@@ -27,7 +28,7 @@ public:
   bool setSystemTimeFromRtc();
   bool configureNtp(const char* server, long gmtOffsetSec, int daylightOffsetSec, uint32_t syncIntervalMs);
   bool syncRtcFromSystemTime();
-  void update(unsigned long currentMillis = 0);
+  bool update(unsigned long currentMillis = 0);
 
 private:
   static void onTimeSync(struct timeval* tv);
@@ -48,6 +49,7 @@ private:
   Adafruit_I2CDevice* rtcDevice = nullptr;
   bool available = false;
   bool validRtcTime = false;
+  bool lostPowerFlag = false;
   bool ntpConfigured = false;
   volatile bool ntpSyncPending = false;
   uint32_t configuredSyncIntervalMs = RTC_NTP_SYNC_INTERVAL_MS;

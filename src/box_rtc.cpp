@@ -30,6 +30,7 @@ bool BoxRtc::begin(uint8_t i2cAddress, TwoWire* wireInstance)
 {
   available = false;
   validRtcTime = false;
+  lostPowerFlag = false;
   rtcI2cAddress = i2cAddress;
 
   if (wireInstance == nullptr || rtcI2cAddress > 0x7F) {
@@ -52,12 +53,9 @@ bool BoxRtc::begin(uint8_t i2cAddress, TwoWire* wireInstance)
   rtcDevice = newDevice;
   available = true;
 
-  if (lostPower()) {
-    return true;
-  }
-
+  lostPowerFlag = lostPower();
   DateTime rtcNow = now();
-  validRtcTime = isEpochValid(rtcNow.unixtime());
+  validRtcTime = !lostPowerFlag && isEpochValid(rtcNow.unixtime());
   return true;
 }
 
@@ -69,6 +67,11 @@ bool BoxRtc::isAvailable() const
 bool BoxRtc::hasValidRtcTime() const
 {
   return validRtcTime;
+}
+
+bool BoxRtc::hasLostPowerFlag() const
+{
+  return lostPowerFlag;
 }
 
 uint8_t BoxRtc::getI2cAddress() const
@@ -97,6 +100,7 @@ void BoxRtc::adjust(const DateTime& dt)
   uint8_t status = readRegister(DS3231_STATUS_REGISTER);
   status &= ~DS3231_OSCILLATOR_STOP_FLAG;
   writeRegister(DS3231_STATUS_REGISTER, status);
+  lostPowerFlag = false;
 }
 
 bool BoxRtc::lostPower()
@@ -127,10 +131,11 @@ DateTime BoxRtc::now()
 
 bool BoxRtc::setSystemTimeFromRtc()
 {
-  if (!available || lostPower()) {
+  if (!available) {
     return false;
   }
 
+  lostPowerFlag = lostPower();
   DateTime rtcNow = now();
   time_t rtcEpoch = static_cast<time_t>(rtcNow.unixtime());
   if (!isEpochValid(rtcEpoch)) {
@@ -142,7 +147,7 @@ bool BoxRtc::setSystemTimeFromRtc()
     return false;
   }
 
-  validRtcTime = true;
+  validRtcTime = !lostPowerFlag;
   return true;
 }
 
@@ -170,18 +175,22 @@ bool BoxRtc::syncRtcFromSystemTime()
   return writeRtc(currentTime);
 }
 
-void BoxRtc::update(unsigned long currentMillis)
+bool BoxRtc::update(unsigned long currentMillis)
 {
   if (!ntpConfigured || !ntpSyncPending) {
-    return;
+    return false;
   }
 
   ntpSyncPending = false;
-  if (!syncRtcFromSystemTime()) {
-    return;
+  time_t currentTime = time(nullptr);
+  if (!isEpochValid(currentTime)) {
+    return false;
   }
 
-  lastRtcSyncMillis = currentMillis == 0 ? millis() : currentMillis;
+  if (writeRtc(currentTime)) {
+    lastRtcSyncMillis = currentMillis == 0 ? millis() : currentMillis;
+  }
+  return true;
 }
 
 void BoxRtc::onTimeSync(struct timeval* tv)

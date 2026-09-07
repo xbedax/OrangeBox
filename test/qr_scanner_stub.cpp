@@ -4,6 +4,8 @@
 
 #include "config.h"
 #include "qr_scanner.h"
+#define CMD_BAUDRATE "hex: 7E 00 07 01 00 2A 02 D8 0F"
+
 
 static QrScanner qrScanner;
 
@@ -413,6 +415,24 @@ static void handleConsoleLine(char* line)
     return;
   }
 
+if (startsCommand(input, "tst")) {
+    input += 3;
+    uint8_t payload[QR_SCANNER_MAX_FRAME_LEN];
+    size_t payloadLen = 0;
+    if (!parsePayload(CMD_BAUDRATE, payload, sizeof(payload), payloadLen)) {
+      Serial.println("[cmd] invalid command payload");
+      return;
+    }
+    if (qrScanner.sendCommand(payload, payloadLen, QR_SCANNER_COMMAND_RESPONSE_WINDOW_MS)) {
+      printFrameLine("[cmd] command sent:", payload, payloadLen);
+    } else {
+      Serial.println("[cmd] command send failed");
+    }
+    return;
+  }
+
+
+
   if (startsCommand(input, "raw")) {
     input += 3;
     uint8_t payload[QR_SCANNER_MAX_FRAME_LEN];
@@ -454,16 +474,35 @@ static void readConsole()
   while (Serial.available() > 0) {
     char ch = static_cast<char>(Serial.read());
     if (ch == '\r' || ch == '\n') {
+#if QR_SCANNER_STUB_LOCAL_ECHO
+      Serial.println();
+#endif
       consoleLine[consoleLineLen] = '\0';
       handleConsoleLine(consoleLine);
       consoleLineLen = 0;
       continue;
     }
 
+    if (ch == '\b' || ch == 0x7F) {
+      if (consoleLineLen > 0) {
+        consoleLineLen--;
+#if QR_SCANNER_STUB_LOCAL_ECHO
+        Serial.print("\b \b");
+#endif
+      }
+      continue;
+    }
+
     if (consoleLineLen + 1 < sizeof(consoleLine)) {
       consoleLine[consoleLineLen++] = ch;
+#if QR_SCANNER_STUB_LOCAL_ECHO
+      Serial.print(ch);
+#endif
     } else {
       consoleLineLen = 0;
+#if QR_SCANNER_STUB_LOCAL_ECHO
+      Serial.println();
+#endif
       Serial.println("[cmd] input line too long");
     }
   }

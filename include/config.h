@@ -65,16 +65,16 @@
 // QR / barcode scanner UART settings. The actual module command bytes are
 // intentionally configurable because available documentation is incomplete.
 #ifndef QR_SCANNER_UART_NUM
-#define QR_SCANNER_UART_NUM 0
+#define QR_SCANNER_UART_NUM 1
 #endif
 #ifndef QR_SCANNER_BAUD
 #define QR_SCANNER_BAUD 9600
 #endif
 #ifndef QR_SCANNER_RX_PIN
-#define QR_SCANNER_RX_PIN 44
+#define QR_SCANNER_RX_PIN 18
 #endif
 #ifndef QR_SCANNER_TX_PIN
-#define QR_SCANNER_TX_PIN 43
+#define QR_SCANNER_TX_PIN 17
 #endif
 #ifndef QR_SCANNER_SWITCH_PIN
 #define QR_SCANNER_SWITCH_PIN 255
@@ -83,7 +83,7 @@
 #define QR_SCANNER_SWITCH_ACTIVE_HIGH 1
 #endif
 #ifndef QR_SCANNER_ACTIVATE_COMMAND
-#define QR_SCANNER_ACTIVATE_COMMAND "hex: 7E 00 08 01 00 02 01 AB CD"
+#define QR_SCANNER_ACTIVATE_COMMAND "7E 00 08 01 00 02 01 AB CD"
 #endif
 #ifndef QR_SCANNER_DEACTIVATE_COMMAND
 #define QR_SCANNER_DEACTIVATE_COMMAND ""
@@ -102,6 +102,9 @@
 #endif
 #ifndef QR_SCANNER_STUB_CONSOLE_BAUD
 #define QR_SCANNER_STUB_CONSOLE_BAUD 9600
+#endif
+#ifndef QR_SCANNER_STUB_LOCAL_ECHO
+#define QR_SCANNER_STUB_LOCAL_ECHO 1
 #endif
 
 // Wifi connection settings

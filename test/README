@@ -95,3 +95,7 @@ Serial monitor commands:
 
 Payloads can be text with escapes (`\r`, `\n`, `\xHH`) or hex bytes, e.g.
 `hex: 16 54 0D`.
+
+The stub echoes typed console characters by default. If the serial monitor
+also does local echo and the input appears twice, set
+`QR_SCANNER_STUB_LOCAL_ECHO` to `0`.
