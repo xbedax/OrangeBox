@@ -63,6 +63,7 @@ struct BoxEventData {
 struct BoxStateContext {
     BoxState state;
     uint8_t doorToOpen;
+    bool pinVerified;
     uint8_t badPasswordCount;
     uint32_t doorOpenTimeout;
     uint32_t passwordEntryTimeout;

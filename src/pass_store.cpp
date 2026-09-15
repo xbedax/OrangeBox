@@ -53,10 +53,46 @@ tohle je treba presunout do main
     uint32_t removePin(uint32_t pinId);
     size_t getPins(std::vector<PinRecord>& pinsTable);
     void garbageCollect();
-    bool usePin(char* pinValue);
+    uint8_t verifyPin(const char* pinValue, PinType pinType = PinType::Password);
+    bool usedPin(uint8_t doorNum);
 */ 
 
 bool validatePin(const CacheRecord& p);
+
+static bool isCredentialType(PinType type) {
+    return type == PinType::Password || type == PinType::PacketNumber;
+}
+
+static bool validateCredential(const char* value, PinType type) {
+    if (!value || !isCredentialType(type)) return false;
+    const size_t minimum = type == PinType::Password ? MIN_PIN_LENGTH : PACKET_NUMBER_MIN;
+    const size_t maximum = type == PinType::Password ? MAX_PIN_LENGTH : PACKET_NUMBER_MAX;
+    const size_t length = strnlen(value, maximum + 1);
+    if (length < minimum || length > maximum) return false;
+    for (size_t i = 0; i < length; ++i) {
+        const unsigned char ch = static_cast<unsigned char>(value[i]);
+        if (type == PinType::Password ? (ch < '0' || ch > '9') : (ch < 33 || ch > 126))
+            return false;
+    }
+    return true;
+}
+
+template<typename Destination, typename Source>
+static void copyCredential(Destination& destination, const Source& source) {
+    destination.pinType = source.pinType;
+    const size_t maximum = source.pinType == PinType::PacketNumber ? PACKET_NUMBER_MAX : MAX_PIN_LENGTH;
+    const size_t length = strnlen(source.credential(), maximum);
+    if (source.pinType == PinType::PacketNumber) {
+        // Indexed assignment also activates the packetNumber member of the union.
+        for (size_t i = 0; i < PACKET_NUMBER_MAX; ++i)
+            destination.packetNumber[i] = i < length ? source.packetNumber[i] : '\0';
+        destination.packetNumber[PACKET_NUMBER_MAX] = '\0';
+    } else {
+        for (size_t i = 0; i < MAX_PIN_LENGTH; ++i)
+            destination.pin[i] = i < length ? source.pin[i] : '\0';
+        destination.pin[MAX_PIN_LENGTH] = '\0';
+    }
+}
 
 static const uint32_t PIN_GC_MAX_SCAN_ID = 4096;
 
@@ -73,8 +109,7 @@ static CacheRecord toCacheRecord(const PinRecord& rec) {
     cacheRec.remaining = rec.remaining;
     strncpy(cacheRec.name, rec.name, MAX_NAME_LENGTH);
     cacheRec.name[MAX_NAME_LENGTH] = '\0';
-    strncpy(cacheRec.pin, rec.pin, MAX_PIN_LENGTH);
-    cacheRec.pin[MAX_PIN_LENGTH] = '\0';
+    copyCredential(cacheRec, rec);
     return cacheRec;
 }
 
@@ -85,6 +120,8 @@ bool PinStorage::updatePin(const CacheRecord& rec) {
         return false;
     }
 
+    if (!update(rec)) return false;
+
     for (auto& record : pinsCache) {
         if (record.pinId == rec.pinId) {
             record.doorNum = rec.doorNum;
@@ -94,7 +131,7 @@ bool PinStorage::updatePin(const CacheRecord& rec) {
             break;
         }
     }
-    return update(rec);
+    return true;
 }
 
 
@@ -105,10 +142,11 @@ uint32_t PinStorage::addPin(const CacheRecord& rec) {
         return 0;
     }
     CacheRecord newRec = rec;
-    PinRecord pinRec;
+    PinRecord pinRec = {};
     pinRec.pinId = 0; // will be assigned in writePin
     strncpy(pinRec.name, rec.name, MAX_NAME_LENGTH);
-    strncpy(pinRec.pin, rec.pin, MAX_PIN_LENGTH);
+    pinRec.name[MAX_NAME_LENGTH] = '\0';
+    copyCredential(pinRec, rec);
     pinRec.validFrom = rec.validFrom;
     pinRec.validTo = rec.validTo;
     pinRec.remaining = rec.remaining;
@@ -123,13 +161,18 @@ uint32_t PinStorage::addPin(const CacheRecord& rec) {
     return newId;
 } //addPin
     
-// Update pin.amount to reflect usage, return true if pin was found and updated, false otherwise
-uint8_t PinStorage::usePin(const char* pinEntered) {
+uint8_t PinStorage::verifyPin(const char* pinEntered, PinType pinType) {
+    verifiedPinId = 0;
+    if (!validateCredential(pinEntered, pinType)) return DOOR_UNKNOWN;
     time_t now = time(nullptr);
-    logger.logPrint(SEVERITY_DEBUG, "usePin: checking pin " + String(pinEntered) + " at time " + String(now) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+    logger.logPrint(SEVERITY_DEBUG, "verifyPin: checking pin " + String(pinEntered) + " at time " + String(now) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
     for (auto& p : pinsCache) {
-        logger.logPrint(SEVERITY_DEBUG, "usePin: checking pinId=" + String(p.pinId) + ", name=" + String(p.name) + ", pin=" + String(p.pin) + ", validFrom=" + String(p.validFrom) + ", validTo=" + String(p.validTo) + ", remaining=" + String(p.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-        if (strcmp(p.pin, pinEntered) != 0)
+        logger.logPrint(SEVERITY_DEBUG, "verifyPin: checking pinId=" + String(p.pinId) + ", name=" + String(p.name) + ", pin=" + String(p.credential()) + ", validFrom=" + String(p.validFrom) + ", validTo=" + String(p.validTo) + ", remaining=" + String(p.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+        if (p.pinType != pinType)
+            continue;
+        if (pinType == PinType::Password
+                ? strcmp(p.pin, pinEntered) != 0
+                : strncmp(p.packetNumber, pinEntered, PACKET_NUMBER_MATCH) != 0)
             continue;
         if (p.validFrom && now < p.validFrom)
             return DOOR_UNKNOWN;
@@ -137,18 +180,37 @@ uint8_t PinStorage::usePin(const char* pinEntered) {
             return DOOR_UNKNOWN;
         if (p.remaining == 0)
             return DOOR_UNKNOWN;
-        uint8_t doorNum = p.doorNum;
-        if (p.remaining > 1) {
-            p.remaining--;
-            updatePin(p);
-        } else if (p.remaining == 1) {
-            CacheRecord usedPin = p;
-            removePin(usedPin);
-        }
-        return doorNum;
+        verifiedPinId = p.pinId;
+        return p.doorNum;
     }
     return DOOR_UNKNOWN; // Pin not found or not valid
-} // usePin
+} // verifyPin
+
+bool PinStorage::usedPin(uint8_t doorNum) {
+    if (verifiedPinId == 0) return false;
+    time_t now = time(nullptr);
+    for (auto& p : pinsCache) {
+        if (p.pinId != verifiedPinId || p.doorNum != doorNum)
+            continue;
+        if ((p.validFrom && now < p.validFrom)
+            || (p.validTo && now > p.validTo)
+            || p.remaining == 0) {
+            verifiedPinId = 0;
+            return false;
+        }
+        if (p.remaining > 1) {
+            CacheRecord consumedPin = p;
+            consumedPin.remaining--;
+            if (!updatePin(consumedPin)) return false;
+        } else if (p.remaining == 1) {
+            if (!removePin(p)) return false;
+        }
+        verifiedPinId = 0;
+        return true;
+    }
+    verifiedPinId = 0;
+    return false;
+} // usedPin
 
 //
 uint32_t PinStorage::removePin(const CacheRecord& rec) {
@@ -164,7 +226,10 @@ uint32_t PinStorage::removePin(const CacheRecord& rec) {
         Serial.printf("[PinStore] update: pinId=%u not properly chained\n", rec.pinId);
         return 0;
     }
-    if (strcmp (pinRec.name, rec.name) != 0 || strcmp (pinRec.pin, rec.pin) != 0) {
+    if (!validateCredential(rec.credential(), rec.pinType)
+        || pinRec.pinType != rec.pinType
+        || strncmp(pinRec.name, rec.name, MAX_NAME_LENGTH + 1) != 0
+        || strcmp(pinRec.credential(), rec.credential()) != 0) {
         Serial.printf("[PinStore] removePin: name or pin mismatch for pinId=%u\n", rec.pinId);
         return 0;
     }
@@ -182,12 +247,12 @@ uint32_t PinStorage::removePin(const CacheRecord& rec) {
     prevRec.nextId = pinRec.nextId;
     nextRec.prevId = pinRec.prevId;
     pinKey(prevRec.pinId, prevKey);
-    prefs.putBytes(prevKey, &prevRec, sizeof(prevRec));     // update prev record
+    writeData(prevRec);                                    // update prev record
     char recKey[ID_LENGTH + 1];
     pinKey(rec.pinId, recKey);
     prefs.remove(recKey);                                   // remove the record
     pinKey(nextRec.pinId, nextKey);
-    prefs.putBytes(nextKey, &nextRec, sizeof(nextRec));     // update next record
+    writeData(nextRec);                                    // update next record
 
     for (auto it = pinsCache.begin(); it != pinsCache.end(); ++it) {
         if (it->pinId == rec.pinId) {
@@ -199,7 +264,20 @@ uint32_t PinStorage::removePin(const CacheRecord& rec) {
     return rec.pinId;
 } // removePin
 
-size_t PinStorage::getPins(uint32_t firstPinId, uint32_t numPins, String &pinsTable)
+static String htmlText(const char* value) {
+    String result;
+    for (; *value; ++value) {
+        switch (*value) {
+        case '&': result += "&amp;"; break;
+        case '<': result += "&lt;"; break;
+        case '>': result += "&gt;"; break;
+        default: result += String(*value); break;
+        }
+    }
+    return result;
+}
+
+size_t PinStorage::getPins(uint32_t firstPinId, uint32_t numPins, String &pinsTable, PinType pinType)
 {
     pinsTable.clear();
     //pinsTable->reserve(pinsCache.size());
@@ -209,11 +287,12 @@ size_t PinStorage::getPins(uint32_t firstPinId, uint32_t numPins, String &pinsTa
 //        pin.pinId = rec.pinId;
 //        pin.prevId = 0;
 //        pin.nextId = 0;
-        logger.logPrint(SEVERITY_DEBUG, "getPins: checking pinId=" + String(rec.pinId) + ", name=" + String(rec.name) + ", pin=" + String(rec.pin) + ", validFrom=" + String(rec.validFrom) + ", validTo=" + String(rec.validTo) + ", remaining=" + String(rec.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-        if (rec.pinId >= firstPinId && PinsFound < numPins) {
+        logger.logPrint(SEVERITY_DEBUG, "getPins: checking pinId=" + String(rec.pinId) + ", name=" + String(rec.name) + ", pin=" + String(rec.credential()) + ", validFrom=" + String(rec.validFrom) + ", validTo=" + String(rec.validTo) + ", remaining=" + String(rec.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+        if ((pinType == PinType::All || rec.pinType == pinType)
+            && rec.pinId >= firstPinId && PinsFound < numPins) {
             PinsFound++;
             logger.logPrint(SEVERITY_DEBUG, "getPins: adding pinId=" + String(rec.pinId) + ", name=" + String(rec.name)  + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-            pinsTable += "<tr><td>" + String(rec.pinId) + "</td><td>" + String(rec.name) + "</td><td>" + String(rec.pin) + "</td><td>" + String(rec.validFrom) + "</td><td>" + String(rec.validTo) + "</td><td>" + String(rec.remaining) + "</td></tr>";
+            pinsTable += "<tr><td>" + String(rec.pinId) + "</td><td>" + htmlText(rec.name) + "</td><td>" + htmlText(rec.credential()) + "</td><td>" + String(rec.validFrom) + "</td><td>" + String(rec.validTo) + "</td><td>" + String(rec.remaining) + "</td></tr>";
         }
     }
     return PinsFound;
@@ -240,7 +319,9 @@ bool PinStorage::update(const CacheRecord& cacheRec) {
         Serial.printf("[PinStore] update: record with pinId=%u not found\n", cacheRec.pinId);
         return false;
     }   
-    if (strcmp (pinRec.name, cacheRec.name) != 0 || strcmp (pinRec.pin, cacheRec.pin) != 0) {
+    if (pinRec.pinType != cacheRec.pinType
+        || strcmp(pinRec.name, cacheRec.name) != 0
+        || strcmp(pinRec.credential(), cacheRec.credential()) != 0) {
         Serial.printf("[PinStore] update: name or pin mismatch for pinId=%u\n", cacheRec.pinId);
         return false;
     }
@@ -266,20 +347,19 @@ void PinStorage::pinKey(uint32_t id, char out[ID_LENGTH + 1]) {
 bool PinStorage::readData(uint32_t id, PinRecord& rec) {
     char key[ID_LENGTH + 1];
     pinKey(id, key);
-    return prefs.getBytes(key, &rec, sizeof(rec)) == sizeof(rec);
+    if (prefs.getBytesLength(key) != sizeof(PinRecord)) return false;
+    PinRecord stored = {};
+    if (prefs.getBytes(key, &stored, sizeof(stored)) != sizeof(stored)
+        || stored.recordType != RecordType::CredentialV1) return false;
+    rec = stored;
+    return true;
 }
 
 // Check if the pin attributes contain valid values (length, characters, date range)
 bool validatePin(const CacheRecord& p) {
-    int len = strlen(p.pin);
-    if (len < MIN_PIN_LENGTH || len > MAX_PIN_LENGTH)
-        return false;
-    for (int i=0;i<len;i++)
-        if (!isdigit(p.pin[i]))
-            return false;
-    if (strlen(p.name) == 0)
-        return false;
-    if (strlen(p.name) > MAX_NAME_LENGTH)
+    if (!validateCredential(p.credential(), p.pinType)) return false;
+    const size_t nameLength = strnlen(p.name, MAX_NAME_LENGTH + 1);
+    if (nameLength == 0 || nameLength > MAX_NAME_LENGTH)
         return false;
     if (p.validFrom && p.validTo && p.validFrom > p.validTo)
         return false;
@@ -298,9 +378,9 @@ uint32_t PinStorage::writePin(const PinRecord &pinIn)
     char prevKey[ID_LENGTH + 1];
 
     Serial.printf("[PinStore] writePin: pinId=%u, name=%s, pin=%s, doorNum=%u, validFrom=%llu, validTo=%llu, remaining=%d\n",
-                  pin.pinId, pin.name, pin.pin, pin.doorNum, pin.validFrom, pin.validTo, pin.remaining); // ###
+                  pin.pinId, pin.name, pin.credential(), pin.doorNum, pin.validFrom, pin.validTo, pin.remaining); // ###
     if (pinIn.pinId == 0 || !readData(pinIn.pinId, storedpin)) {   // not found, create new record
-        if (prefs.getBytes(LAST_KEY_KEY, &lastpin, sizeof(lastpin)) != sizeof(lastpin)) {
+        if (!readData(LAST_KEY, lastpin)) {
             Serial.println("[PinStore] writePin: failed to read last record");
             return 0;
         }
@@ -314,12 +394,12 @@ uint32_t PinStorage::writePin(const PinRecord &pinIn)
         pin.prevId = lastpin.prevId;
         prevpin.nextId = pin.pinId;
         pinKey(prevpin.pinId, prevKey);
-        prefs.putBytes(prevKey, &prevpin, sizeof(prevpin));
+        writeData(prevpin);
         pinKey(pin.pinId, recKey);
-        prefs.putBytes(recKey, &pin, sizeof(pin));
+        writeData(pin);
         lastpin.nextId = lastpin.nextId + 1;
         lastpin.prevId = pin.pinId;
-        int written =  prefs.putBytes(LAST_KEY_KEY, &lastpin, sizeof(lastpin));
+        int written = writeData(lastpin) ? sizeof(lastpin) : 0;
          if (written == 0 ) {
             Serial.printf("[PinStore] update: failed to write pinId=%u\n", pin.pinId); 
             return 0;
@@ -335,7 +415,7 @@ uint32_t PinStorage::writePin(const PinRecord &pinIn)
         }
  
         pinKey(pin.pinId, recKey);
-        int written = prefs.putBytes(recKey, &pin, sizeof(pin));    
+        int written = writeData(pin) ? sizeof(pin) : 0;
         if (written == 0 ) {
             Serial.printf("[PinStore] update: failed to write pinId=%u\n", pin.pinId); 
             return 0;
@@ -415,7 +495,12 @@ bool PinStorage::rebuildCache() {
 
 bool PinStorage::begin()
 {
-    prefs.begin("pins", false);
+    if (!prefs.begin("pins", false)) return false;
+    // TEMPORARY: discard the old, smaller test-data format. Remove after rollout.
+    if (prefs.isKey(FIRST_KEY_KEY) && prefs.getBytesLength(FIRST_KEY_KEY) < sizeof(PinRecord)) {
+        Serial.println("[PinStore] resetting legacy test-data pool");
+        resetPool();
+    }
     garbageCollect();
     rebuildCache();
     return true;
@@ -434,6 +519,7 @@ const std::vector<CacheRecord>& PinStorage::debugCache() const
 #endif
 
 bool PinStorage::writeData(const PinRecord& rec) {
+    if (rec.recordType != RecordType::CredentialV1) return false;
     char key[ID_LENGTH + 1];
     pinKey(rec.pinId, key);
     return prefs.putBytes(key, &rec, sizeof(rec)) == sizeof(rec);
@@ -485,10 +571,10 @@ bool PinStorage::isStoredPinValid(const PinRecord& rec) {
         return false;
     }
 
-    PinRecord normalized = rec;
-    normalized.name[MAX_NAME_LENGTH] = '\0';
-    normalized.pin[MAX_PIN_LENGTH] = '\0';
-    CacheRecord cacheRec = toCacheRecord(normalized);
+    if (rec.recordType != RecordType::CredentialV1
+        || !validateCredential(rec.credential(), rec.pinType)
+        || strnlen(rec.name, MAX_NAME_LENGTH + 1) > MAX_NAME_LENGTH) return false;
+    CacheRecord cacheRec = toCacheRecord(rec);
     return validatePin(cacheRec);
 }
 

@@ -21,6 +21,7 @@ BoxStateMachine::BoxStateMachine() : onStateChange(nullptr) {
     memset(&context, 0, sizeof(BoxStateContext));
     context.state = BoxState::Home;
     context.doorToOpen = 0;
+    context.pinVerified = false;
     context.badPasswordCount = 0;
 }
 
@@ -28,6 +29,7 @@ void BoxStateMachine::initialize() {
     unsigned long currentMillis = millis();
     context.state = BoxState::Home;
     context.doorToOpen = 0;
+    context.pinVerified = false;
     context.badPasswordCount = 0;
     context.doorOpenTimeout = 0;
     context.passwordEntryTimeout = 0;
@@ -322,9 +324,10 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
         case BoxState::Password:
             if (event.eventType == BoxEventType::KeyboardEnter) {
                 // Validate password
-                context.doorToOpen = pinStorage.usePin(event.data.keyboardData.password);
+                context.doorToOpen = pinStorage.verifyPin(event.data.keyboardData.password);
                 if (context.doorToOpen != DOOR_UNKNOWN) {
                     // Valid PIN - transition to opening
+                    context.pinVerified = true;
                     context.badPasswordCount = 0;
                     transitionTo(BoxState::Opening, currentMillis);
                 } else {
@@ -354,6 +357,7 @@ void BoxStateMachine::handleWebEvent(const BoxEventData& event, unsigned long cu
     if (event.eventType == BoxEventType::WebOpenBox) {
         // Web request to open door
         context.doorToOpen = event.data.doorData.doorNum;
+        context.pinVerified = false;
         transitionTo(BoxState::Opening, currentMillis);
     }
 }
@@ -418,6 +422,7 @@ void BoxStateMachine::handleTimerEvent(const BoxEventData& event, unsigned long 
 // State entry/exit actions
 
 void BoxStateMachine::onEnterHome(unsigned long currentMillis) {
+    context.pinVerified = false;
     enableExternal();
     boxDisplay.writeInfoLine(INFOLINE_HOME);            // INFOLINE_HOME
     boxDisplay.writeActionLine(ACTIONLINE_HOME);         // ACTIONLINE_HOME
@@ -475,6 +480,10 @@ void BoxStateMachine::onExitOpening() {
 }
 
 void BoxStateMachine::onEnterOpen(unsigned long currentMillis) {
+    if (context.pinVerified && !pinStorage.usedPin(context.doorToOpen)) {
+        logger.logPrint(SEVERITY_ERROR, "Error - verified PIN for door " + String(context.doorToOpen) + " could not be consumed", BOX_HOST_NAME, LOGAREA_ACCESS);
+    }
+    context.pinVerified = false;
     boxDisplay.writeActionLine(ACTIONLINE_CLOSE);         // ACTIONLINE_CLOSE
     boxDisplay.writeInfoLine(INFOLINE_EMPTY);            // INFOLINE_EMPTY
     boxDisplay.writeResponseLine(RESPONSELINE_EMPTY);        // RESPONSELINE_EMPTY
@@ -493,6 +502,7 @@ void BoxStateMachine::onEnterClosed(unsigned long currentMillis) {
     boxDisplay.writeResponseLine(RESPONSELINE_EMPTY);        // RESPONSELINE_EMPTY
     boxDisplay.writeStatusLine();
     context.ambientOffTimeout = currentMillis + AMBIENT_TIMEOUT;
+    context.doorToOpen = DOOR_UNKNOWN;
 }
 
 void BoxStateMachine::onExitClosed() {
@@ -534,7 +544,7 @@ void BoxStateMachine::onExitBadPass() {
 // Helper methods
 
 bool BoxStateMachine::validatePassword(const char* password) {
-    // This is handled by pinStorage.usePin() which returns doorNum if valid, 0 if invalid
+    // This is handled by pinStorage.verifyPin() which returns doorNum if valid, 0 if invalid
     // Actual implementation delegated to pinStorage
     return false;
 }

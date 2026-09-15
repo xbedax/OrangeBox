@@ -34,6 +34,14 @@ public:
         return len;
     }
 
+    size_t getBytesLength(const char* key) const
+    {
+        if (key == nullptr) return 0;
+        const auto& ns = currentNamespace();
+        const auto found = ns.find(std::string(key));
+        return found == ns.end() ? 0 : found->second.size();
+    }
+
     size_t getBytes(const char* key, void* value, size_t maxLen) const
     {
         if (key == nullptr || value == nullptr) {

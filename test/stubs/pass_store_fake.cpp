@@ -7,9 +7,9 @@ bool PinStorage::begin()
     return true;
 }
 
-uint8_t PinStorage::usePin(const char* pinValue)
+uint8_t PinStorage::verifyPin(const char* pinValue, PinType pinType)
 {
-    if (pinValue == nullptr) {
+    if (pinValue == nullptr || pinType != PinType::Password) {
         return 0;
     }
 
@@ -18,4 +18,9 @@ uint8_t PinStorage::usePin(const char* pinValue)
     }
 
     return 0;
+}
+
+bool PinStorage::usedPin(uint8_t)
+{
+    return true;
 }

@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>ORANGE box</title>
+    <meta name="description" content="Orange box UI v 0.01">
+    <link rel="icon" type="image/x-icon" href="./favicon.ico">
+
+    <!-- Pico.css -->
+    <link
+      rel="stylesheet"
+      href="scss/pico.css"
+    >
+
+    <style>
+        :root {
+            --pico-border-radius: 1rem;
+            --pico-typography-spacing-vertical: 1.5rem;
+            --pico-form-element-spacing-vertical: 1rem;
+            --pico-form-element-spacing-horizontal: 1.25rem;
+            --pico-font-family: Garamond, serif;
+        }
+        .camerawindow {
+        border: 5px solid #ddd;
+        border-radius: 20px;
+        padding: 10px;
+        width: 320px;
+        }
+        #pinTable tr td:nth-child(3),
+        #pinTable tr th:nth-child(3) {
+        display: none;
+}
+        
+ 
+    </style>
+  </head>
+
+  <body>
+    <!-- Header -->
+    <header class="container">
+      <hgroup>
+        <center>
+        <svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 1080 1080">
+            <polygon points="531,906 63,906 63,39 998,39 998,906" fill="none" stroke="rgb(255,149,0)" stroke-width="22" stroke-linejoin="round"/>
+            <polygon points="496,982 63,906 63,39 930,192 930,1058" fill="rgb(255,149,0)" stroke="rgb(255,149,0)" stroke-width="15" stroke-linejoin="round"/>
+        </svg>
+
+        </center>
+      </hgroup>
+    </header>
+    <!-- ./ Header -->
+
+    <!-- Main -->
+    <main class="container">
+      <!-- Controls -->
+      <section id="Controls">
+        <article id="ControlBox">
+            <h2>Box control</h2>
+			<fieldset id="door_controls"> <! door controls inside only>
+            <div class="grid">
+			    <button class="primary" data-target="modal-confirm" onclick="toggleModal('modal-confirm')">
+                <P style="font-size:3px">&nbsp;</P><P style="font-size:50px"><strong>O&nbsp;p&nbsp;e&nbsp;n&nbsp; &nbsp; &nbsp;B&nbsp;O&nbsp;X</strong></P><P style="font-size:3px">&nbsp;</P>
+            </button>
+			</div>
+			</fieldset>
+            <P>&nbsp;</P>
+            <div class="grid">
+                <div class="grid">
+                <P>Door state:</P><P><img id="door_state_closed" src="door_closed.png" hidden alt="Closed"><img id="door_state_open" src="door_open.png" alt="Closed" hidden></P>
+                <P>Ambient: </P><P><img id="ambient_state_off" src="light_off.png" hidden alt="Off"><img id="ambient_state_on" src="light_on.png"  hidden alt="Off"></P> 
+                </div>
+            </div>
+            <P>&nbsp;</P>
+            <div class="grid">
+                <P>Camera data: </P><P><img class="camerawindow" src="camera_mockup.png" width="320"> </P>
+            </div>
+        </article>
+      </section>
+      <!-- ./ Controls -->
+
+      <!-- PINs -->
+      <section id="tables">
+        <article id="pintablearticle">
+            <h2>Active PINs</h2>
+            <div class="overflow-auto">
+            <table role="grid" id="pinTable">
+                <col />
+                <col />
+                <col id="colpin" class="colInvi" />
+                <col />
+                <col />
+                <thead id="pinTableHead">
+                <tr> <!--It is necessary to  allign name attribute of columns with id of corresponding modal input-->
+                    <th scope="col" name="pinid">Id</th>
+                    <th scope="col" name="pinname">Name</th>
+                    <th scope="col" name="pinvalue">Value</th>
+                    <th scope="col" name="datefrom">Not before</th>
+                    <th scope="col" name="dateto">Not After</th>
+                    <th scope="col" name="amount">Count</th>
+                </tr>
+                </thead>
+                <tbody id="pinrows" data-tooltip="Click row to show / edit details">
+                <tr>
+                    <td>&nbsp;</td>
+                    <td>N&nbsp;O&nbsp;&nbsp;&nbsp;P&nbsp;I&nbsp;N&nbsp;s</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                </tr>  
+                </tbody>
+            </table>
+            </div>
+            <button class="contrast" data-target="modal-pin" onclick='toggleModal("modal-pin")'>
+              Add new
+            </button>
+
+        </article>
+      </section>
+    <!-- ./ PINs -->
+
+    <!-- TimeBar -->
+      <section id="info">
+        <article id="pintablearticle">
+          <div class="grid">
+            <div id="connstate">
+              <svg height="50" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewbox="0 0 113 125" id="stateOnline" hidden role="img">
+                  <title>Online</title>
+                  <path d="m0.00001,14.7645l0,95.87085c0,11.40157 12.62863,18.48738 22.64628,12.70625l83.0655,-47.9348c9.87737,-5.70005 9.87737,-19.71392 0,-25.41397l-83.0655,-47.93509c-10.01765,-5.78091 -22.64628,1.30497 -22.64628,12.70677l0,-0.00001z" stroke="#323232" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="#0c6b0c"/>
+              </svg>
+              <svg height="50" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg"  viewbox="0 0 137 128" id="stateOffline" hidden role="img">
+                  <title>Offline</title>
+                  <path fill="#bf0000" stroke-width="2" stroke="#1C274C" d="m0.75,63.75c0,-29.69852 0,-44.54774 9.88517,-53.77384c9.8851,-9.22616 25.79499,-9.22616 57.61483,-9.22616c31.8195,0 47.72992,0 57.61462,9.22616c9.88538,9.2261 9.88538,24.07532 9.88538,53.77384c0,29.6982 0,44.54793 -9.88538,53.77365c-9.8847,9.22635 -25.79512,9.22635 -57.61462,9.22635c-31.81984,0 -47.72972,0 -57.61483,-9.22635c-9.88517,-9.22572 -9.88517,-24.07545 -9.88517,-53.77365z"/>
+              </svg>
+              <svg height="50" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewbox="0 0 143 130" fill="none"  id="statePause" role="img">
+                  <title>Unknown</title>
+                    <path fill="#ff7f00" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" stroke="#000000" d="m97.97125,18.10953l0,94.16954c0,3.3662 0,5.04894 0.34201,6.44844c1.40544,5.74724 6.92568,10.24202 13.99208,11.3851c1.72073,0.27816 3.78971,0.27816 7.92855,0.27816c4.13795,0 6.21494,0 7.93567,-0.27816c7.0664,-1.14307 12.58931,-5.63786 13.99475,-11.3851c0.33934,-1.38719 0.33934,-3.05327 0.33934,-6.36007l0,-94.34651c0,-3.30694 0,-4.97577 -0.33934,-6.36289c-1.40544,-5.74717 -6.93191,-10.23652 -13.99831,-11.37966c-1.72073,-0.27838 -3.78971,-0.27838 -7.92855,-0.27838c-4.13884,0 -6.21138,0 -7.93211,0.27838c-7.0664,1.14315 -12.58663,5.6325 -13.99208,11.37966c-0.34201,1.39943 -0.34201,3.08557 -0.34201,6.45148z"/>
+                    <path fill="#ff7f00" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" stroke="#000000" d="m0,18.10953l0,94.16954c0,3.3662 0,5.04894 0.34228,6.44844c1.40553,5.74724 6.92532,10.24202 13.99163,11.3851c1.72064,0.27816 3.78988,0.27816 7.92837,0.27816c4.13839,0 6.21556,0 7.93621,-0.27816c7.06631,-1.14307 12.58913,-5.63786 13.99466,-11.3851c0.33925,-1.38719 0.33925,-3.05327 0.33925,-6.36007l0,-94.34651c0,-3.30694 0,-4.97577 -0.33925,-6.36289c-1.40553,-5.74717 -6.93236,-10.23652 -13.99858,-11.37966c-1.72073,-0.27838 -3.78997,-0.27838 -7.92837,-0.27838c-4.13839,0 -6.21164,0 -7.93229,0.27838c-7.06631,1.14315 -12.5861,5.6325 -13.99163,11.37966c-0.34228,1.39943 -0.34228,3.08557 -0.34228,6.45148z"/>
+              </svg>
+            </div>
+            <div id="lastresult"></div>
+                    Box time: <div id="boxtime" > T </div>
+          </div>
+        </article>
+      </section>
+    <!-- ./ TimeBar -->
+
+      
+     
+    <!-- Footer -->
+    <footer class="container">
+      <small>&copy InfoRoom, s.r.o. 2026 • Built with <a href="https://picocss.com">Pico</a>
+      
+        </small>
+    </footer>
+    <!-- ./ Footer -->
+
+    <!-- Modal confirm -->
+    <dialog id="modal-confirm">
+      <article>
+        <header>
+          <button
+            aria-label="Close"
+            rel="prev"
+            data-target="modal-confirm"
+            onclick="toggleModal('modal-confirm')"
+          ></button>
+          <h3>Really open?</h3>
+        </header>
+         <form id="confirmForm">
+            <div class="grid">
+            <input type="hidden" name="_command_" id="_command_" value="opendoor" > <br>
+            <input type="hidden" name="doornum" id="doornum" value="0">
+            </div>
+        <p>
+          Be sure there is somebody next to the BOX. You can NOT close it otherwise.
+        </p>
+		 <div class="grid">
+                  <div>
+                    <label for="presence">Presence Code</label>
+                    <input
+                    type="text"
+                    name="presence"
+                    id="presence"
+                    placeholder="Presence code"
+                    aria-label="presence presence"
+					value="X"
+					disabled="true"
+                    >
+                  </div>
+                  <div align="center">
+                    <label for="checkbox-presence">Verify Code</label>
+                    <input type="checkbox" id="checkbox-presence" name="checkbox-presence" onclick= togglePresence(event) >
+                  </div>
+
+                </div>
+        <footer>
+          <button
+            role="button"
+            class="secondary"
+            data-target="modal-confirm"
+            onclick="toggleModal('modal-confirm')"            
+          >
+            Cancel</button
+          ><button autofocus data-target="modal-confirm" id="buttonconfirm" onclick="submitModal(event)">
+            Confirm
+          </button>
+        </form>
+        </footer>
+      </article>
+    </dialog>
+    <!-- ./ Modal PIN -->
+    <dialog id="modal-pin">
+      <article>
+        <header>
+          <button
+            aria-label="Close"
+            rel="prev"
+            data-target="modal-pin"
+            onclick="toggleModal('modal-pin')"
+          ></button>
+          <h3>PIN details</h3>
+        </header>
+            <form id="pinForm" autocomplete="off">
+                <input type="hidden" name ="_command_", id="_command_" value="set_pin">
+                <input type="hidden" name="pinid" id="pinid" value="0">
+                <div class="grid">
+                  <div>
+                    <label for="pinname">PIN name</label>
+                    <input
+                    type="text"
+                    name="pinname"
+                    id="pinname"
+                    placeholder="PIN name"
+                    aria-label="name name"
+                    required
+                    >
+                  </div>
+                  <div>
+                    <label for="pinvalue">PIN value</label>
+                    <input
+                    type="number"
+                    maxlength="8"
+                    id = "pinvalue";
+                    name="pinvalue"
+                    placeholder="PIN value"
+                    aria-label="PIN value"
+                    required
+                    >
+                  </div>
+                </div>
+                <div class="grid">
+                  <div>
+                    <label for="amount">Use #</label>
+                    <input
+                    type="number"
+                    name="amount"
+                    id="amount"
+                    min="-1"
+                    max="99"
+                    placeholder="1"
+                    aria-label="Amount"
+                    aria-invalid=""
+                    value="-1"
+                    disabled
+                    required
+                    >
+                  </div>
+                  <div align="center">
+                    <label for="checkbox-unlimited">Unlimited</label>
+                    <input type="checkbox" id="checkbox-unlimited" name="checkbox-unlimited" onclick= toggleCount(event) checked>
+                  </div>
+                  <div>
+                    <label for="btnpropose">&nbsp;</label>
+                    <button  class="contrast" type="button" id="btnpropose" onclick="getPin(event)">Propose</button>
+                  </div>
+                </div>
+                <div class="grid">
+                  <div>
+                    <label for="datefrom">Not before</label>
+                    <input
+                    type="date"
+                    name="date from"
+                    id="datefrom"
+                    placeholder="Date from"
+                    aria-label="Date from"
+                    autocomplete="date"
+                    >
+                  </div>
+                  <div>
+                    <label for="dateto">Not after</label>
+                    <input
+                    type="date"
+                    name="date to"
+                    id="dateto"
+                    placeholder="Date to"
+                    aria-label="Date to"
+                    autocomplete="date"
+                    >
+                  </div>
+                </div>
+                <!--<button type="submit">Subscribe</button>-->
+                <div class="grid">
+                <button id="savebutton" type="button" data-target="modal-pin" onclick="submitModal(event)">Save</button>
+                <button id="deletebutton" type="button" data-target="modal-pin" onclick="submitModal(event)" class="secondary">Delete</button>
+                <button id="cancelbutton" type="button" autofocus data-target="modal-pin" onclick="toggleModal('modal-pin')" class="secondary">Cancel</button>
+                </div>
+            </form>
+        </article>
+    </dialog>
+	<!-- ./ Modal Code -->
+	<dialog id="modal-code">
+      <article>
+        <header>
+          <button
+            aria-label="Close"
+            rel="prev"
+            data-target="modal-code"
+            onclick="toggleModal('modal-code')"
+          ></button>
+          <h3>PIN details</h3>
+        </header>
+            <form id="codeForm" autocomplete="off">
+                <input type="hidden" name ="_command_", id="_command_" value="set_code">
+                <input type="hidden" name="codeid" id="codeid" value="0">
+                <div class="grid">
+                  <div>
+                    <label for="pinname">Code name</label>
+                    <input
+                    type="text"
+                    name="pinname"
+                    id="pinname"
+                    placeholder="PIN name"
+                    aria-label="name name"
+                    required
+                    >
+                  </div>
+                  <div>
+                    <label for="pinvalue">Code value</label>
+                    <input
+                    type="number"
+                    maxlength="8"
+                    id = "pinvalue";
+                    name="pinvalue"
+                    placeholder="PIN value"
+                    aria-label="PIN value"
+                    required
+                    >
+                  </div>
+                </div>
+                <div class="grid">
+                  <div>
+                    <label for="datefrom">Not before</label>
+                    <input
+                    type="date"
+                    name="date from"
+                    id="datefrom"
+                    placeholder="Date from"
+                    aria-label="Date from"
+                    autocomplete="date"
+                    >
+                  </div>
+                  <div>
+                    <label for="dateto">Not after</label>
+                    <input
+                    type="date"
+                    name="date to"
+                    id="dateto"
+                    placeholder="Date to"
+                    aria-label="Date to"
+                    autocomplete="date"
+                    >
+                  </div>
+                </div>
+                <!--<button type="submit">Subscribe</button>-->
+                <div class="grid">
+                <button id="savebutton" type="button" data-target="modal-code" onclick="submitModal(event)">Save</button>
+                <button id="deletebutton" type="button" data-target="modal-code" onclick="submitModal(event)" class="secondary">Delete</button>
+                <button id="cancelbutton" type="button" autofocus data-target="modal-pin" onclick="toggleModal('modal-code')" class="secondary">Cancel</button>
+                </div>
+            </form>
+        </article>
+    </dialog>
+
+    
+    <!-- Mechanize -->
+    <script src="js/modal.js"></script>
+    <script src="js/pingenerator.js"></script>
+    <script src="js/clicktable.js"></script>
+    <script src="js/websoc.js"></script>
+    <script>
+        const pinsInTable = 15;
+        const connIds = ["stateOffline", "statePause", "stateOnline"];
+		const 
+        let doorState = 0;
+        let lastConnectionState = 1;
+        const checkboxUnlimited = document.getElementById("checkbox-unlimited");
+		const checkboxPresence = document.getElementById("checkbox-presence");
+		
+        let pinForm = document.forms["pinForm"];
+        const deadTimeout = 80;       //seconds from last messsage
+        const unknownTimeout = 40;       //seconds from last messsage
+        var boxClockDrift = 0;
+        const dateFormat = "YYYY-MM-DD hh:mm";
+		const pinType = ["ctPin", "ctCode"];
+
+      function connectionCheck () {
+        let currentDelay = Date.now() - lastContact;
+        let newConnectionState = connectionState;
+        if ( newConnectionState < 2 && currentDelay > unknownTimeout * 1000 ){
+          newConnectionState = 1;
+        }
+        if ( currentDelay  > deadTimeout * 1000 ){
+          newConnectionState = 0;
+        }
+        console.log("ConCheck: " + newConnectionState + " / " + lastContact);
+        if ( newConnectionState != lastConnectionState) {
+          lastConnectionState = newConnectionState;
+          for (let idx = 0; idx < connIds.length; idx++){
+            console.log("-->" + connIds[idx]);
+            if (idx == newConnectionState) {
+                console.log ("==> " +  connIds[idx])
+                document.getElementById(connIds[idx]).removeAttribute('hidden');
+            } else {
+               document.getElementById(connIds[idx]).setAttribute('hidden', true);
+            }
+          }
+        }
+      }
+      function stateUpdater () {
+        connectionCheck();
+		boxClockDrift = 0;
+        for (let idx = 0; idx < driftPoolLength; idx++){
+          boxClockDrift = boxClockDrift + driftPool[idx];
+        }
+		boxClockDrift = boxClockDrift / driftPoolLength;
+        const hDate = new Date( Date.now() + boxClockDrift );
+        const year = hDate.getFullYear();
+        const month = String(hDate.getMonth() + 1).padStart(2, '0'); // 0-based → 1-based, pad with leading zero
+        const day = String(hDate.getDate()).padStart(2, '0');
+        const hours = String(hDate.getHours()).padStart(2, '0');
+        const minutes = String(hDate.getMinutes()).padStart(2, '0');
+        const seconds = String(hDate.getSeconds()).padStart(2, '0');
+        var bDate = 
+          dateFormat.replace('YYYY', year)
+            .replace('MM', month)
+            .replace('DD', day)
+            .replace('hh', hours)
+            .replace('mm', minutes) // Note: 'MM' is reused for minutes (matches common formatting)
+            .replace('SS', seconds);
+        document.getElementById("boxtime").innerHTML= bDate;
+      }
+
+      function getCreds (firstCredId, credCount, type) {		
+        const data = {};  
+        data["pinId"] = firstCredId;
+        data["pinCount"] = credCount;
+		data["pinType"]= pinType[type];
+        postFormData(data, "get_pins");        
+      }
+      function getPinPager (actPinId, pinCount) {
+        const data = {};  
+        data["pinId"] = actPinId;
+        data["pinCount"] = pinCount;
+        postFormData(data, "get_pager");
+      }
+      function getDoorState (doorNum) {
+        const data = {};  
+        data["doornum"] = doorNum;
+        postFormData(data, "get_door");
+      }
+      function getAmbientState (lightNum) {
+        const data = {};  
+        data["lightId"] = lightNum;
+        postFormData(data, "get_ambient");
+      }
+      function getStatusContent () {
+        const data = {};  
+        data["dummy"] = "-"
+        postFormData(data, "get_status");
+      }
+
+      // Disables/enables Count input according to Unlimitewd checkbox
+      function toggleCount(event){
+        unlimitedState = !checkboxUnlimited.checked;
+        if (unlimitedState) {
+          document.getElementById('amount').disabled = false;
+          document.getElementById('amount').value = "1";
+        } else {
+          document.getElementById('amount').disabled = true;
+          document.getElementById('amount').value = "-1";
+        };
+      }
+      function togglePresence(event){
+		verifyPresence = checkboxPresence.checked;
+        if (verifyPresence) {
+          document.getElementById('presence').disabled = false;
+          document.getElementById('presence').value = "";
+        } else {
+          document.getElementById('presence').disabled = true;
+          document.getElementById('presence').value = "X";
+        };
+      }
+
+                 
+      function initializePage(){
+        getCreds(0, pinsInTable, 1);
+		getCreds(0, pinsInTable, 2);
+        getPinPager(0,pinsInTable);
+        getDoorState(0);
+        getAmbientState(0);
+        getStatusContent();
+        addRowHandlers();
+        window.setInterval (stateUpdater, 2000);
+      };
+
+      window.onload=initializePage();
+      
+    </script>
+  </body>
+</html>

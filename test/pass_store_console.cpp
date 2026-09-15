@@ -437,7 +437,7 @@ static void handleUse(JsonObjectConst data)
         std::cout << "[ERROR] use: missing pin\n";
         return;
     }
-    uint8_t doorNum = pinStorage.usePin(pin);
+    uint8_t doorNum = pinStorage.verifyPin(pin);
     std::cout << "[USE] pin=\"" << pin << "\" door=" << static_cast<unsigned>(doorNum) << "\n";
 }
 

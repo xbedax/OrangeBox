@@ -31,6 +31,7 @@
 #define LOG_RECONNECT_INTERVAL 5000
 #endif
 
+/* Log Area definitions */
 #define LOGAREA_TEMP    1
 #define LOGAREA_COND    2           // box internal environment measurement logging
 #define LOGAREA_COMM    3           // communication

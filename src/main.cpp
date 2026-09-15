@@ -82,6 +82,7 @@ unsigned long switchTime = 0;
 //const long interval = 1000;                     // time to open lock DELETE
 unsigned long linkStatusMillis = 0;                   // wifi reconnect timer
 const long linkStatusInterval = LINK_CHECK_INTERVAL;                 // wifi reconnect delay
+unsigned long wifiRecoveryResetMillis = 0;
 keyboardStatus keyboardState;                   // Structure to keep current keyboard info
 unsigned long statusLineTimeout = 0;            // Status line refresh control
 char vpnLocalHost[16] = "127.0.0.1";
@@ -674,16 +675,7 @@ bool startVpn() {
                   " -> " + String(vpnLocalHost) + ":80",
                   BOX_HOST_NAME, LOGAREA_COMM);
 
-  if (!vpnManager.connect()) {
-    logger.logPrint(SEVERITY_WARNING,
-                    "VPN connect deferred: " + vpnManager.getStateString(),
-                    BOX_HOST_NAME, LOGAREA_COMM);
-    return false;
-  }
-
-  logger.logPrint(SEVERITY_INFO,
-                  "VPN connected, remote port " + String(vpnManager.getBoundPort()),
-                  BOX_HOST_NAME, LOGAREA_COMM);
+  logger.logPrint(SEVERITY_INFO, "VPN connection scheduled", BOX_HOST_NAME, LOGAREA_COMM);
   return true;
 }
 
@@ -780,6 +772,7 @@ void setup() {
   // Connect to WiFi
   WiFi.setHostname(reqhostname);
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, password);
   logger.logPrint(SEVERITY_INFO, "Starting WiFi\n", BOX_HOST_NAME, LOGAREA_COMM);
 
@@ -961,30 +954,32 @@ void handleDueActions(uint8_t action, const char* arg) {
 // Check link status - try to reconnect if necessary
 void checkLinkStatus() {
   if (WiFi.status() != WL_CONNECTED ) {
-    Serial.println("Reconnecting to WiFi...");
-    WiFi.disconnect();
-    WiFi.reconnect();
-    if (WiFi.status() != WL_CONNECTED ) {
-      if (wifiState) {
-        Serial.println("WiFi lost");
-        vpnManager.disconnect();
-      }
-      wifiState = 0;        
-      boxDisplay.setLinkStatus(ONLINE_STATUS_OFFLINE);
-    } else {
-      if (!wifiState) {
-        Serial.println("WiFi restored");
-      }
-      wifiState = 1;
-      boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
-      startVpn();
+    if (wifiState) {
+      Serial.println("WiFi lost");
+      vpnManager.disconnect();
+      wifiRecoveryResetMillis = currentMillis + WIFI_RECOVERY_RESET_INTERVAL_MS;
     }
+
+    if (wifiRecoveryResetMillis == 0) {
+      wifiRecoveryResetMillis = currentMillis + WIFI_RECOVERY_RESET_INTERVAL_MS;
+      WiFi.reconnect();
+    } else if (currentMillis >= wifiRecoveryResetMillis) {
+      // Auto reconnect can remain stuck after an AP disappears. Restart the
+      // association only after allowing the previous attempt to complete.
+      Serial.println("Restarting WiFi association");
+      WiFi.disconnect(false, false);
+      WiFi.begin(ssid, password);
+      wifiRecoveryResetMillis = currentMillis + WIFI_RECOVERY_RESET_INTERVAL_MS;
+    }
+    wifiState = 0;
+    boxDisplay.setLinkStatus(ONLINE_STATUS_OFFLINE);
   } else {
     if (!wifiState) {
       Serial.println("WiFi restored");
       wifiState = 1;
       startVpn();
     }
+    wifiRecoveryResetMillis = 0;
     boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
   }
     linkStatusMillis = currentMillis + linkStatusInterval;

@@ -51,35 +51,40 @@ VPNManager::VPNManager()
 
 bool VPNManager::begin(const VPNConfig& vpnConfig)
 {
-    disconnect();
-
-    config = vpnConfig;
-    initialized = false;
-    nextConnectAttemptMs = 0;
-
     if (!hasBackend()) {
-        configured = false;
         state = VPNConnectionState::BackendUnavailable;
         return false;
     }
 
-    if (!isConfigValid(config)) {
-        configured = false;
+    if (!isConfigValid(vpnConfig)) {
         state = VPNConnectionState::ConfigInvalid;
         return false;
     }
 
-    configured = applyConfig(config);
-    state = configured ? VPNConnectionState::Disconnected : VPNConnectionState::ConfigInvalid;
-    return configured;
+    if (!startWorker()) {
+        state = VPNConnectionState::Error;
+        return false;
+    }
+
+    Command command = {CommandType::Configure, vpnConfig};
+    if (xQueueOverwrite(commandQueue, &command) != pdPASS) {
+        state = VPNConnectionState::Error;
+        return false;
+    }
+
+    state = VPNConnectionState::Disconnected;
+    return true;
 }
 
 bool VPNManager::connect()
 {
-    if (!configured) {
-        return false;
-    }
+    return state != VPNConnectionState::Unconfigured
+        && state != VPNConnectionState::BackendUnavailable
+        && state != VPNConnectionState::ConfigInvalid;
+}
 
+bool VPNManager::connectInternal()
+{
 #if VPN_MANAGER_HAS_REVERSE_TUNNEL
     uint32_t now = millis();
     if (!canAttemptConnect(now)) {
@@ -126,6 +131,21 @@ bool VPNManager::connect()
 
 bool VPNManager::disconnect()
 {
+    if (commandQueue == nullptr) {
+        state = VPNConnectionState::Unconfigured;
+        return true;
+    }
+
+    Command command = {CommandType::Disconnect, {}};
+    if (xQueueOverwrite(commandQueue, &command) != pdPASS) {
+        return false;
+    }
+    state = VPNConnectionState::Disconnected;
+    return true;
+}
+
+void VPNManager::disconnectInternal()
+{
 #if VPN_MANAGER_HAS_REVERSE_TUNNEL
     auto* tunnel = static_cast<SSHTunnel*>(client);
     if (tunnel != nullptr) {
@@ -134,17 +154,12 @@ bool VPNManager::disconnect()
 #endif
     state = configured ? VPNConnectionState::Disconnected : VPNConnectionState::Unconfigured;
     nextConnectAttemptMs = 0;
-    return !isConnected();
+    boundPort = 0;
 }
 
 bool VPNManager::isConnected() const
 {
-#if VPN_MANAGER_HAS_REVERSE_TUNNEL
-    auto* tunnel = static_cast<SSHTunnel*>(client);
-    return tunnel != nullptr && tunnel->isConnected();
-#else
-    return false;
-#endif
+    return state == VPNConnectionState::Connected;
 }
 
 bool VPNManager::reconnect()
@@ -154,6 +169,12 @@ bool VPNManager::reconnect()
 }
 
 void VPNManager::update()
+{
+    // SSH setup can block for the configured connection timeout. It runs only
+    // in workerLoop(), never in the Arduino loop that drives the UI.
+}
+
+void VPNManager::updateInternal()
 {
 #if VPN_MANAGER_HAS_REVERSE_TUNNEL
     if (!configured) {
@@ -171,7 +192,7 @@ void VPNManager::update()
         state == VPNConnectionState::Error ||
         state == VPNConnectionState::StaleRemoteListener) {
         if (canAttemptConnect(now)) {
-            connect();
+            connectInternal();
         }
         return;
     }
@@ -200,12 +221,7 @@ VPNConnectionState VPNManager::getState() const
 
 int VPNManager::getBoundPort() const
 {
-#if VPN_MANAGER_HAS_REVERSE_TUNNEL
-    auto* tunnel = static_cast<SSHTunnel*>(client);
-    return tunnel != nullptr ? tunnel->getBoundPort() : 0;
-#else
-    return 0;
-#endif
+    return boundPort;
 }
 
 String VPNManager::getStateString() const
@@ -352,4 +368,63 @@ bool VPNManager::applyConfig(const VPNConfig& vpnConfig)
     (void)vpnConfig;
     return false;
 #endif
+}
+
+bool VPNManager::startWorker()
+{
+    if (workerTask != nullptr) {
+        return true;
+    }
+
+    commandQueue = xQueueCreate(1, sizeof(Command));
+    if (commandQueue == nullptr) {
+        return false;
+    }
+
+    constexpr uint32_t workerStackWords = 8192;
+    if (xTaskCreatePinnedToCore(workerEntry, "vpn", workerStackWords, this,
+                                1, &workerTask, 0) != pdPASS) {
+        vQueueDelete(commandQueue);
+        commandQueue = nullptr;
+        return false;
+    }
+    return true;
+}
+
+void VPNManager::workerEntry(void* parameter)
+{
+    static_cast<VPNManager*>(parameter)->workerLoop();
+}
+
+void VPNManager::workerLoop()
+{
+    for (;;) {
+        Command command = {};
+        while (xQueueReceive(commandQueue, &command, 0) == pdTRUE) {
+            if (command.type == CommandType::Disconnect) {
+                disconnectInternal();
+                configured = false;
+                state = VPNConnectionState::Unconfigured;
+                continue;
+            }
+
+            disconnectInternal();
+            config = command.config;
+            initialized = false;
+            nextConnectAttemptMs = 0;
+            configured = applyConfig(config);
+            state = configured ? VPNConnectionState::Disconnected
+                               : VPNConnectionState::ConfigInvalid;
+        }
+
+        if (configured) {
+            updateInternal();
+            if (state == VPNConnectionState::Connected) {
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+                boundPort = static_cast<SSHTunnel*>(client)->getBoundPort();
+#endif
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
 }

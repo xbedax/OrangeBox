@@ -1,4 +1,6 @@
-#define _VERSION_ "1.01.b"
+#pragma once
+
+#define _VERSION_ "1.01.c"
 #if __has_include("box_setup.h")
 #include "box_setup.h"
 #endif
@@ -40,6 +42,12 @@
 #define PIN_NAME_LEN 10                      //length of PIN identificator
 #define PIN_CODE_LEN 8                      // lenght of the PIN itself
 
+// Packet numbers are text; lengths exclude the terminating NUL.
+
+// Packet number length constraints
+#define PACKET_NUMBER_MIN 8
+#define PACKET_NUMBER_MAX 20
+#define PACKET_NUMBER_MATCH 8
 
 // Password entry settings
 #define PASS_MAX PIN_CODE_LEN
@@ -61,6 +69,12 @@
 
 
 #define LINK_CHECK_INTERVAL 3000
+
+// If ESP32 auto reconnect remains stuck, restart the association only after
+// this interval. It must be longer than a normal AP association.
+#ifndef WIFI_RECOVERY_RESET_INTERVAL_MS
+#define WIFI_RECOVERY_RESET_INTERVAL_MS 15000UL
+#endif
 
 // QR / barcode scanner UART settings. The actual module command bytes are
 // intentionally configurable because available documentation is incomplete.
@@ -190,7 +204,7 @@
 /*-----------------*/
 
 // Command strings for WebSocket communication
-#define CMD_COUNT 15
+#define CMD_COUNT 16
 #define COMM_GET_DOOR_STATE "get_door"
 #define COMM_WATCHDOG_PING "_ping_"
 #define COMM_WATCHDOG_PONG "_pong_"

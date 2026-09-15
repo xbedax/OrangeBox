@@ -1,0 +1,139 @@
+/*
+ * Modal
+ *
+ * Orange BOX - https://box.inforoom.cz
+ * Copyright 2025-2026 - Licensed under MIT
+ */
+
+// Config
+const isOpenClass = "modal-is-open";
+const openingClass = "modal-is-opening";
+const closingClass = "modal-is-closing";
+const animationDuration = 400; // ms
+let visibleModal = null;
+
+// Toggle modal
+const toggleModal = (event) => {
+  event.preventDefault();
+  const modal = document.getElementById(event.currentTarget.getAttribute("data-target"));
+  typeof modal != "undefined" && modal != null && isModalOpen(modal)
+    ? closeModal(modal)
+    : openModal(modal);
+};
+
+// Is modal open
+const isModalOpen = (modal) => {
+  return modal.hasAttribute("open") && modal.getAttribute("open") != "false" ? true : false;
+};
+
+// Open modal
+const openModal = (modal) => {
+  if (isScrollbarVisible()) {
+    document.documentElement.style.setProperty("--scrollbar-width", `${getScrollbarWidth()}px`);
+  }
+  document.documentElement.classList.add(isOpenClass, openingClass);
+  setTimeout(() => {
+    visibleModal = modal;
+    document.documentElement.classList.remove(openingClass);
+  }, animationDuration);
+  modal.setAttribute("open", true);
+};
+
+// Close modal
+const closeModal = (modal) => {
+  visibleModal = null;
+  document.documentElement.classList.add(closingClass);
+  setTimeout(() => {
+    document.documentElement.classList.remove(closingClass, isOpenClass);
+    document.documentElement.style.removeProperty("--scrollbar-width");
+    modal.removeAttribute("open");
+  }, animationDuration);
+};
+
+// Close with a click outside
+document.addEventListener("click", (event) => {
+  if (visibleModal != null) {
+    const modalContent = visibleModal.querySelector("article");
+    const isClickInside = modalContent.contains(event.target);
+    !isClickInside && closeModal(visibleModal);
+  }
+});
+
+// Close with Esc key
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && visibleModal != null) {
+    closeModal(visibleModal);
+  }
+});
+
+// Get scrollbar width
+const getScrollbarWidth = () => {
+  // Creating invisible container
+  const outer = document.createElement("div");
+  outer.style.visibility = "hidden";
+  outer.style.overflow = "scroll"; // forcing scrollbar to appear
+  outer.style.msOverflowStyle = "scrollbar"; // needed for WinJS apps
+  document.body.appendChild(outer);
+
+  // Creating inner element and placing it in the container
+  const inner = document.createElement("div");
+  outer.appendChild(inner);
+
+  // Calculating difference between container's full width and the child width
+  const scrollbarWidth = outer.offsetWidth - inner.offsetWidth;
+
+  // Removing temporary elements from the DOM
+  outer.parentNode.removeChild(outer);
+
+  return scrollbarWidth;
+};
+
+// Is scrollbar visible
+const isScrollbarVisible = () => {
+  return document.body.scrollHeight > screen.height;
+};
+
+// Collect form fields from the modal into a plain { id: value } object.
+// Fields without an id are keyed by their name attribute; nameless ones are skipped.
+// Returns null when no form is found in the modal.
+const collectForm = (modal) => {
+  const form = modal.querySelector("form");
+  if (!form) return null;
+ 
+  const data = {};
+  for (const el of form.elements) {
+    // Skip buttons, fieldsets, and anything without a usable key
+    if (el.tagName === "BUTTON" || el.tagName === "FIELDSET") continue;
+    const key = el.id || el.name;
+    if (!key) continue;
+ 
+    if (el.type === "checkbox" || el.type === "radio") {
+      data[key] = el.checked;
+    } else if (el.type === "select-multiple") {
+      data[key] = Array.from(el.selectedOptions).map((o) => o.value);
+    } else {
+      data[key] = el.value;
+    }
+  }
+ 
+  return data;
+};
+ 
+// Send collected form data to the WebSocket server as JSON.
+// Payload shape: { type: "formSubmit", modalId: "<id>", timestamp: <ms>, data: { id: value, … } }
+const postFormData = (formData) => {
+  const socket = getWebSocket();
+  const payload = JSON.stringify({
+    type: "formSubmit",
+    modalId: visibleModal ? visibleModal.id : null,
+    timestamp: Date.now(),
+    data: formData,
+  });
+ 
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(payload);
+  } else {
+    // Queue the send for when the connection is ready
+    socket.addEventListener("open", () => socket.send(payload), { once: true });
+  }
+};

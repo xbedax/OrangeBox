@@ -2,6 +2,9 @@
 #define VPN_MANAGER_H
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
 #ifndef VPN_GATEWAY_HOST
 #define VPN_GATEWAY_HOST "192.168.0.1"
@@ -126,12 +129,25 @@ public:
     uint32_t getNextReconnectDelayMs() const;
 
 private:
+    enum class CommandType : uint8_t {
+        Configure,
+        Disconnect
+    };
+
+    struct Command {
+        CommandType type;
+        VPNConfig config;
+    };
+
     void* client = nullptr;
     VPNConfig config;
     bool configured = false;
     bool initialized = false;
-    VPNConnectionState state = VPNConnectionState::Unconfigured;
+    volatile VPNConnectionState state = VPNConnectionState::Unconfigured;
     uint32_t nextConnectAttemptMs = 0;
+    volatile int boundPort = 0;
+    QueueHandle_t commandQueue = nullptr;
+    TaskHandle_t workerTask = nullptr;
 
     bool hasBackend() const;
     bool isConfigValid(const VPNConfig& vpnConfig) const;
@@ -139,6 +155,12 @@ private:
     bool canAttemptConnect(uint32_t now) const;
     bool backendLastFailureWasStaleListener() const;
     void scheduleReconnect(VPNConnectionState failureState, uint32_t delayMs);
+    bool startWorker();
+    bool connectInternal();
+    void disconnectInternal();
+    void updateInternal();
+    static void workerEntry(void* parameter);
+    void workerLoop();
 };
 
 extern VPNManager vpnManager;
