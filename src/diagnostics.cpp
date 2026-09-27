@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <ctime>
 #include "logger.h"
 
 namespace {
@@ -37,6 +38,7 @@ bool BoxDiagnostics::collectStatistics(DiagnosticSnapshot& snapshot) const
 {
     snapshot = {};
     snapshot.timestampMillis = millis();
+    snapshot.timestampEpoch = time(nullptr);
 
     addMetric(snapshot, "uptime_ms", "Uptime", snapshot.timestampMillis, "ms");
     addMetric(snapshot, "heap_internal_total_bytes", "Internal heap total", ESP.getHeapSize(), "B");
@@ -114,8 +116,15 @@ String BoxDiagnostics::showSnapshots(DiagnosticFormat format, uint8_t maxSnapsho
         String title = "Snapshot ";
         title += String(static_cast<unsigned int>(i + 1));
         title += " @ ";
-        title += String(static_cast<unsigned long>(snapshot.timestampMillis));
-        title += " ms";
+        char epochBuffer[24];
+        struct tm timeInfo;
+        time_t epoch = snapshot.timestampEpoch;
+        if (localtime_r(&epoch, &timeInfo) != nullptr &&
+            strftime(epochBuffer, sizeof(epochBuffer), "%Y-%m-%d %H:%M:%S", &timeInfo) > 0) {
+            title += epochBuffer;
+        } else {
+            title += String(static_cast<long>(epoch));
+        }
         output += renderSnapshot(snapshot, format, title.c_str());
         if (format == DiagnosticFormat::Text) {
             output += '\n';
@@ -215,6 +224,7 @@ void BoxDiagnostics::storeSnapshot(const DiagnosticSnapshot& snapshot)
 
 void BoxDiagnostics::snapshotToJsonObject(JsonObject target, const DiagnosticSnapshot& snapshot) const
 {
+    target["timestamp"] = static_cast<uint32_t>(snapshot.timestampEpoch);
     target["timestamp_ms"] = snapshot.timestampMillis;
     target["watched_task"] = watchedTaskName;
 
@@ -240,7 +250,7 @@ String BoxDiagnostics::snapshotToCompactLogJson(const DiagnosticSnapshot& snapsh
     snprintf(output,
              sizeof(output),
              "{\"t\":%lu,\"ih\":[%lu,%lu,%lu],\"ps\":[%lu,%lu,%lu],\"stk\":%lu,\"fl\":[%lu,%lu,%lu]}",
-             static_cast<unsigned long>(snapshot.timestampMillis),
+             static_cast<unsigned long>(snapshot.timestampEpoch),
              static_cast<unsigned long>(metricValue(snapshot, KEY_HEAP_INTERNAL_FREE)),
              static_cast<unsigned long>(metricValue(snapshot, KEY_HEAP_INTERNAL_MAX_ALLOC)),
              static_cast<unsigned long>(metricValue(snapshot, KEY_HEAP_INTERNAL_MIN_FREE)),

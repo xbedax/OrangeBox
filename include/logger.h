@@ -43,7 +43,7 @@ struct LogRecord {
     uint8_t logArea;
     const char* source;
     const char* message;
-    unsigned long timestamp;
+    unsigned long timestamp; // epoch seconds from time(nullptr), not millis() uptime
 };
 
 struct QueuedLogRecord {
@@ -51,7 +51,7 @@ struct QueuedLogRecord {
     uint8_t logArea;
     char source[LOG_SOURCE_MAX_LEN + 1];
     char message[LOG_MESSAGE_MAX_LEN + 1];
-    unsigned long timestamp;
+    unsigned long timestamp; // epoch seconds from time(nullptr), not millis() uptime
 };
 
 class LogTransport {
@@ -83,7 +83,8 @@ private:
     uint16_t head = 0;
     uint16_t count = 0;
     uint32_t dropped = 0;
-    unsigned long nextReconnectMillis = 0;
+    unsigned long reconnectStartedAt = 0;
+    bool reconnectStarted = false;
 
     QueuedLogRecord makeQueuedRecord(const LogRecord& record) const;
     void queuePush(const LogRecord& record);

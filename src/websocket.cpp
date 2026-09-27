@@ -1,4 +1,5 @@
 #include "websocket.h"
+#include "timeout.h"
 #include <ArduinoJson.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -26,8 +27,7 @@ CommandEntry commands[CMD_COUNT] = {};
 void WebSocketManager::notifyClients(const char* command, JsonDocument payload) {
   JsonDocument doc;
   doc["_command_"] = command;  
-//  doc["_timestamp_"] = static_cast<long long>(time(nullptr));
-  doc["_timestamp_"] = (millis());
+  doc["_timestamp_"] = static_cast<uint32_t>(time(nullptr));
   doc["data"] = payload;
   String changeString;
   serializeJson(doc, changeString);
@@ -41,7 +41,7 @@ uint8_t WebSocketManager::getClientCount() const {
 void WebSocketManager::sendMessage(AsyncWebSocketClient* client, const char* command, JsonDocument payload) {
   JsonDocument doc;
   doc["_command_"] = command;
-  doc["_timestamp_"] = (millis());
+  doc["_timestamp_"] = static_cast<uint32_t>(time(nullptr));
   doc["data"] = payload;
   String changeString;
   serializeJson(doc, changeString);
@@ -67,13 +67,16 @@ void WebSocketManager::handleWebSocketMessage(AsyncWebSocketClient *sender, void
   JsonDocument request;
 
     if (len > 0) {
-        data[len] = 0;
-        DeserializationError error = deserializeJson(request, data);
+        DeserializationError error = deserializeJson(request, data, len);
         if (error) {
             Serial.println("Failed to parse JSON");
             return;
         }
-        const char* commandReceived = request["_command_"];
+        const char* commandReceived = request["_command_"].as<const char*>();
+        if (!commandReceived || !*commandReceived || !request["data"].is<JsonObject>()) {
+            Serial.println("Invalid message envelope");
+            return;
+        }
         if(0 != strcmp(commandReceived, "_pong_")) { Serial.printf(" .. Received command: %s\n", commandReceived);   }  //###
            //###
         JsonObj data = request["data"].as<JsonObj>();
@@ -112,8 +115,9 @@ void WebSocketManager::onEvent(AsyncWebSocket *server, AsyncWebSocketClient *cli
 }
 
 void WebSocketManager::update(unsigned long currentMillis) {
-  if (currentMillis > nextWatchdogFeedTime) {
-    nextWatchdogFeedTime = currentMillis + watchdogFeedInterval;
+  if (!watchdogFeedStarted || timeoutElapsed(watchdogFeedStartedAt, watchdogFeedInterval, currentMillis)) {
+    watchdogFeedStartedAt = currentMillis;
+    watchdogFeedStarted = true;
     watchdogSendRequest();
     cleanupConnections();
 

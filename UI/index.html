@@ -120,6 +120,46 @@
       </section>
     <!-- ./ PINs -->
 
+      <!-- Codes -->
+      <section id="codetables">
+        <article id="codetablearticle">
+            <h2>Active Codes</h2>
+            <div class="overflow-auto">
+            <table role="grid" id="codeTable">
+                <col />
+                <col />
+                <col id="colcode" class="colInvi" />
+                <col />
+                <col />
+                <thead id="codeTableHead">
+                <tr> <!--It is necessary to  allign name attribute of columns with id of corresponding modal input-->
+                    <th scope="col" name="codeid">Id</th>
+                    <th scope="col" name="codename">Name</th>
+                    <th scope="col" name="codevalue">Value</th>
+                    <th scope="col" name="codefrom">Not before</th>
+                    <th scope="col" name="codeto">Not After</th>
+                </tr>
+                </thead>
+                <tbody id="coderows" data-tooltip="Click row to show / edit details">
+                <tr>
+                    <td>&nbsp;</td>
+                    <td>N&nbsp;O&nbsp;&nbsp;&nbsp;c&nbsp;o&nbsp;d&nbsp;e&nbsp;s</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                    <td>&nbsp;</td>
+                </tr>  
+                </tbody>
+            </table>
+            </div>
+            <button class="contrast" data-target="modal-code" onclick='toggleModal("modal-code")'>
+              Add new
+            </button>
+
+        </article>
+      </section>
+    <!-- ./ Codes -->
+
+
     <!-- TimeBar -->
       <section id="info">
         <article id="pintablearticle">
@@ -223,8 +263,9 @@
           <h3>PIN details</h3>
         </header>
             <form id="pinForm" autocomplete="off">
-                <input type="hidden" name ="_command_", id="_command_" value="set_pin">
+                <input type="hidden" name="_command_" value="set_cred">
                 <input type="hidden" name="pinid" id="pinid" value="0">
+				<input type="hidden" name="credType" value="ctPin">
                 <div class="grid">
                   <div>
                     <label for="pinname">PIN name</label>
@@ -287,6 +328,7 @@
                     aria-label="Date from"
                     autocomplete="date"
                     >
+                    <small>Pr?zdn? datum znamen? neomezenou platnost.</small>
                   </div>
                   <div>
                     <label for="dateto">Not after</label>
@@ -298,12 +340,13 @@
                     aria-label="Date to"
                     autocomplete="date"
                     >
+                    <small>Pr?zdn? datum znamen? neomezenou platnost.</small>
                   </div>
                 </div>
                 <!--<button type="submit">Subscribe</button>-->
                 <div class="grid">
                 <button id="savebutton" type="button" data-target="modal-pin" onclick="submitModal(event)">Save</button>
-                <button id="deletebutton" type="button" data-target="modal-pin" onclick="submitModal(event)" class="secondary">Delete</button>
+                <button id="deletebutton" data-action="deletebutton" type="button" data-target="modal-pin" onclick="submitModal(event)" class="secondary">Delete</button>
                 <button id="cancelbutton" type="button" autofocus data-target="modal-pin" onclick="toggleModal('modal-pin')" class="secondary">Cancel</button>
                 </div>
             </form>
@@ -319,32 +362,33 @@
             data-target="modal-code"
             onclick="toggleModal('modal-code')"
           ></button>
-          <h3>PIN details</h3>
+          <h3>Code details</h3>
         </header>
             <form id="codeForm" autocomplete="off">
-                <input type="hidden" name ="_command_", id="_command_" value="set_code">
+                <input type="hidden" name="_command_" value="set_cred">
                 <input type="hidden" name="codeid" id="codeid" value="0">
+				<input type="hidden" name="credType" value="ctCode">
                 <div class="grid">
                   <div>
-                    <label for="pinname">Code name</label>
+                    <label for="codename">Code name</label>
                     <input
                     type="text"
-                    name="pinname"
-                    id="pinname"
-                    placeholder="PIN name"
+                    name="codename"
+                    id="codename"
+                    placeholder="Code name"
                     aria-label="name name"
                     required
                     >
                   </div>
                   <div>
-                    <label for="pinvalue">Code value</label>
+                    <label for="codevalue">Code value</label>
                     <input
-                    type="number"
-                    maxlength="8"
-                    id = "pinvalue";
-                    name="pinvalue"
-                    placeholder="PIN value"
-                    aria-label="PIN value"
+                    type="text"
+                    maxlength="20"
+                    id = "codevalue";
+                    name="codevalue"
+                    placeholder="Code value"
+                    aria-label="Code value"
                     required
                     >
                   </div>
@@ -354,35 +398,36 @@
                     <label for="datefrom">Not before</label>
                     <input
                     type="date"
-                    name="date from"
-                    id="datefrom"
+                    name="codefrom"
+                    id="codefrom"
                     placeholder="Date from"
                     aria-label="Date from"
                     autocomplete="date"
                     >
+                    <small>Pr?zdn? datum znamen? neomezenou platnost.</small>
                   </div>
                   <div>
-                    <label for="dateto">Not after</label>
+                    <label for="codeto">Not after</label>
                     <input
                     type="date"
                     name="date to"
-                    id="dateto"
+                    id="codeto"
                     placeholder="Date to"
                     aria-label="Date to"
                     autocomplete="date"
                     >
+                    <small>Pr?zdn? datum znamen? neomezenou platnost.</small>
                   </div>
                 </div>
                 <!--<button type="submit">Subscribe</button>-->
                 <div class="grid">
-                <button id="savebutton" type="button" data-target="modal-code" onclick="submitModal(event)">Save</button>
-                <button id="deletebutton" type="button" data-target="modal-code" onclick="submitModal(event)" class="secondary">Delete</button>
-                <button id="cancelbutton" type="button" autofocus data-target="modal-pin" onclick="toggleModal('modal-code')" class="secondary">Cancel</button>
+                <button id="code-savebutton" data-action="savebutton" type="button" data-target="modal-code" onclick="submitModal(event)">Save</button>
+                <button id="code-deletebutton" data-action="deletebutton" type="button" data-target="modal-code" onclick="submitModal(event)" class="secondary">Delete</button>
+                <button id="code-cancelbutton" type="button" autofocus data-target="modal-code" onclick="toggleModal('modal-code')" class="secondary">Cancel</button>
                 </div>
             </form>
         </article>
     </dialog>
-
     
     <!-- Mechanize -->
     <script src="js/modal.js"></script>
@@ -392,7 +437,7 @@
     <script>
         const pinsInTable = 15;
         const connIds = ["stateOffline", "statePause", "stateOnline"];
-		const 
+		const codesInTable = 15;
         let doorState = 0;
         let lastConnectionState = 1;
         const checkboxUnlimited = document.getElementById("checkbox-unlimited");
@@ -403,119 +448,197 @@
         const unknownTimeout = 40;       //seconds from last messsage
         var boxClockDrift = 0;
         const dateFormat = "YYYY-MM-DD hh:mm";
-		const pinType = ["ctPin", "ctCode"];
+		const credTypes = ["all", "ctPin", "ctCode"];
+        const credPages = Object.create(null);
 
-      function connectionCheck () {
-        let currentDelay = Date.now() - lastContact;
-        let newConnectionState = connectionState;
-        if ( newConnectionState < 2 && currentDelay > unknownTimeout * 1000 ){
-          newConnectionState = 1;
+		function connectionCheck () {
+			let currentDelay = Date.now()/1000 - lastContact;
+			let newConnectionState = connectionState;
+			if ( newConnectionState < 2 && currentDelay > unknownTimeout  ){
+			  newConnectionState = 1;
+			}
+			if ( currentDelay  > deadTimeout  ){
+			  newConnectionState = 0;
+			}
+			console.log("ConCheck: " + newConnectionState + " / " + lastContact);
+			if ( newConnectionState != lastConnectionState) {
+			  lastConnectionState = newConnectionState;
+			  for (let idx = 0; idx < connIds.length; idx++){
+				console.log("-->" + connIds[idx]);
+				if (idx == newConnectionState) {
+					console.log ("==> " +  connIds[idx])
+					document.getElementById(connIds[idx]).removeAttribute('hidden');
+				} else {
+				   document.getElementById(connIds[idx]).setAttribute('hidden', true);
+				}
+			  }
+			}
+		}
+		function handleMessage(myObj){
+			var command = myObj["_command_"];
+			var keys = Object.keys(myObj["data"]);
+			if ( command == "c_visibility") {
+				for (var i = 0; i < keys.length; i++){
+				  var key = keys[i];
+				  console.log("Visibility for key: " + key);
+				  if ( myObj["data"][key] == 'no') {
+					document.getElementById(key).hidden = true;
+				  }else{
+					document.getElementById(key).hidden = false;
+				  }  
+				}
+			}
+			if ( command == "c_enordis") {
+				for (var i = 0; i < keys.length; i++){
+				  var key = keys[i];
+				  if ( myObj["data"][key] == 'disable') {
+					console.log("Disabling key: " + key);
+					document.getElementById(key).disabled = true;
+				  }else{
+					console.log("Enabling key: " + key);
+					document.getElementById(key).disabled = false;
+				  }  
+				}
+			}
+			if (command == "c_setcred") {
+                const payload = myObj.data;
+                if (payload.lastresult) document.getElementById("lastresult").textContent = payload.lastresult;
+                if (payload.success === false) return;
+                if (payload.changed) {
+                    const page = credPages[payload.credType];
+                    if (page) getCreds(page.firstCredId, page.credCount, page.type);
+                    return;
+                }
+                if (!payload.rows || !["ctPin", "ctCode"].includes(payload.credType)) return;
+				var credType = myObj["data"]["credType"];
+				var htmlContent = "";
+				var htmlBeacon = "";
+				if ( credType == "ctCode" ) {
+					var recordSet = myObj["data"]["rows"];
+					htmlContent = rowsToTableBody(recordSet, ["codeid", "codename", "codevalue", "codefrom",  "codeto"]);
+					htmlBeacon = "coderows";
+				}
+				if ( credType == "ctPin" ) {
+					var recordSet = myObj["data"]["rows"];
+					htmlContent = rowsToTableBody(myObj["data"]["rows"], ["pinid", "pinname", "pinvalue", "datefrom",  "dateto", "amount"]);
+					htmlBeacon = "pinrows";
+				}
+				console.log("Produced: " + htmlContent);
+				console.log("Changing key: " + htmlBeacon);
+				document.getElementById(htmlBeacon).innerHTML = "";
+				document.getElementById(htmlBeacon).innerHTML = htmlContent;
+			}
+			if ( command == "c_content") {
+				for (var i = 0; i < keys.length; i++){
+					var key = keys[i];
+					console.log("Changing key: " + key);
+					document.getElementById(key).innerHTML = "";
+					document.getElementById(key).innerHTML = myObj["data"][key];
+				}
+			}
+		}
+		function stateUpdater () {
+			connectionCheck();
+			boxClockDrift = 0;
+			for (let idx = 0; idx < driftPoolLength; idx++){
+			  boxClockDrift = boxClockDrift + driftPool[idx];
+			}
+			boxClockDrift = boxClockDrift / driftPoolLength;
+			const hDate = new Date( Date.now() + boxClockDrift * 1000 );
+			const year = hDate.getFullYear();
+			const month = String(hDate.getMonth() + 1).padStart(2, '0'); // 0-based → 1-based, pad with leading zero
+			const day = String(hDate.getDate()).padStart(2, '0');
+			const hours = String(hDate.getHours()).padStart(2, '0');
+			const minutes = String(hDate.getMinutes()).padStart(2, '0');
+			const seconds = String(hDate.getSeconds()).padStart(2, '0');
+			var bDate = 
+			  dateFormat.replace('YYYY', year)
+				.replace('MM', month)
+				.replace('DD', day)
+				.replace('hh', hours)
+				.replace('mm', minutes) // Note: 'MM' is reused for minutes (matches common formatting)
+				.replace('SS', seconds);
+			document.getElementById("boxtime").innerHTML= bDate;
+		}
+		function getCreds (firstCredId, credCount, type) {		
+			const data = {};  
+			data["credId"] = firstCredId;
+			data["credCount"] = credCount;
+			data["credType"] = credTypes[type];
+            credPages[data["credType"]] = {firstCredId, credCount, type};
+			postFormData(data, "get_creds");        
+		}
+		function getDoorState (doorNum) {
+			const data = {};  
+			data["doornum"] = doorNum;
+			postFormData(data, "get_door");
+		}
+		function getAmbientState (lightNum) {
+			const data = {};  
+			data["lightId"] = lightNum;
+			postFormData(data, "get_ambient");
+		}
+		function getStatusContent () {
+			const data = {};  
+			data["dummy"] = "-"
+			postFormData(data, "get_status");
+		}
+		  
+        function escapeCredText(value) {
+            return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
         }
-        if ( currentDelay  > deadTimeout * 1000 ){
-          newConnectionState = 0;
-        }
-        console.log("ConCheck: " + newConnectionState + " / " + lastContact);
-        if ( newConnectionState != lastConnectionState) {
-          lastConnectionState = newConnectionState;
-          for (let idx = 0; idx < connIds.length; idx++){
-            console.log("-->" + connIds[idx]);
-            if (idx == newConnectionState) {
-                console.log ("==> " +  connIds[idx])
-                document.getElementById(connIds[idx]).removeAttribute('hidden');
-            } else {
-               document.getElementById(connIds[idx]).setAttribute('hidden', true);
-            }
-          }
-        }
-      }
-      function stateUpdater () {
-        connectionCheck();
-		boxClockDrift = 0;
-        for (let idx = 0; idx < driftPoolLength; idx++){
-          boxClockDrift = boxClockDrift + driftPool[idx];
-        }
-		boxClockDrift = boxClockDrift / driftPoolLength;
-        const hDate = new Date( Date.now() + boxClockDrift );
-        const year = hDate.getFullYear();
-        const month = String(hDate.getMonth() + 1).padStart(2, '0'); // 0-based → 1-based, pad with leading zero
-        const day = String(hDate.getDate()).padStart(2, '0');
-        const hours = String(hDate.getHours()).padStart(2, '0');
-        const minutes = String(hDate.getMinutes()).padStart(2, '0');
-        const seconds = String(hDate.getSeconds()).padStart(2, '0');
-        var bDate = 
-          dateFormat.replace('YYYY', year)
-            .replace('MM', month)
-            .replace('DD', day)
-            .replace('hh', hours)
-            .replace('mm', minutes) // Note: 'MM' is reused for minutes (matches common formatting)
-            .replace('SS', seconds);
-        document.getElementById("boxtime").innerHTML= bDate;
-      }
+		function rowsToTableBody(rows, cols = Object.keys(rows)) {
+			if (cols.length === 0) return '';
 
-      function getCreds (firstCredId, credCount, type) {		
-        const data = {};  
-        data["pinId"] = firstCredId;
-        data["pinCount"] = credCount;
-		data["pinType"]= pinType[type];
-        postFormData(data, "get_pins");        
-      }
-      function getPinPager (actPinId, pinCount) {
-        const data = {};  
-        data["pinId"] = actPinId;
-        data["pinCount"] = pinCount;
-        postFormData(data, "get_pager");
-      }
-      function getDoorState (doorNum) {
-        const data = {};  
-        data["doornum"] = doorNum;
-        postFormData(data, "get_door");
-      }
-      function getAmbientState (lightNum) {
-        const data = {};  
-        data["lightId"] = lightNum;
-        postFormData(data, "get_ambient");
-      }
-      function getStatusContent () {
-        const data = {};  
-        data["dummy"] = "-"
-        postFormData(data, "get_status");
-      }
+			const rowCount = rows[cols[0]].length;
+			let html = '';
+			for (let i = 0; i < rowCount; i++) {
+                html += '<tr>' + cols.map(col => {
+                    const value = rows[col][i] ?? '';
+                    if (Object.hasOwn(credDateBounds, col)) {
+                        const text = value === '' || value === credDateBounds[col] ? 'Neomezeno' : value;
+                        const raw = escapeCredText(value).replace(/"/g, '&quot;');
+                        return `<td data-cred-value="${raw}">${escapeCredText(text)}</td>`;
+                    }
+                    return `<td>${escapeCredText(value)}</td>`;
+                }).join('') + '</tr>\n';
+			}
+			return html;
+		}
+	  // Disables/enables Count input according to Unlimitewd checkbox
+		function toggleCount(event){
+			unlimitedState = !checkboxUnlimited.checked;
+			if (unlimitedState) {
+			  document.getElementById('amount').disabled = false;
+			  document.getElementById('amount').value = "1";
+			} else {
+			  document.getElementById('amount').disabled = true;
+			  document.getElementById('amount').value = "-1";
+			};
+		}
+		function togglePresence(event){
+			verifyPresence = checkboxPresence.checked;
+			if (verifyPresence) {
+			  document.getElementById('presence').disabled = false;
+			  document.getElementById('presence').value = "";
+			} else {
+			  document.getElementById('presence').disabled = true;
+			  document.getElementById('presence').value = "X";
+			};
+		}
+					 
+		function initializePage(){
+			getCreds(0, pinsInTable, 1);
+			getCreds(0, codesInTable, 2);
+			getDoorState(0);
+			getAmbientState(0);
+			getStatusContent();
+			addRowHandlers("pin");
+			addRowHandlers("code");
+			window.setInterval (stateUpdater, 2000);
+		};
 
-      // Disables/enables Count input according to Unlimitewd checkbox
-      function toggleCount(event){
-        unlimitedState = !checkboxUnlimited.checked;
-        if (unlimitedState) {
-          document.getElementById('amount').disabled = false;
-          document.getElementById('amount').value = "1";
-        } else {
-          document.getElementById('amount').disabled = true;
-          document.getElementById('amount').value = "-1";
-        };
-      }
-      function togglePresence(event){
-		verifyPresence = checkboxPresence.checked;
-        if (verifyPresence) {
-          document.getElementById('presence').disabled = false;
-          document.getElementById('presence').value = "";
-        } else {
-          document.getElementById('presence').disabled = true;
-          document.getElementById('presence').value = "X";
-        };
-      }
-
-                 
-      function initializePage(){
-        getCreds(0, pinsInTable, 1);
-		getCreds(0, pinsInTable, 2);
-        getPinPager(0,pinsInTable);
-        getDoorState(0);
-        getAmbientState(0);
-        getStatusContent();
-        addRowHandlers();
-        window.setInterval (stateUpdater, 2000);
-      };
-
-      window.onload=initializePage();
+		window.onload=initializePage();
       
     </script>
   </body>

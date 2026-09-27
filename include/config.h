@@ -1,6 +1,6 @@
 #pragma once
 
-#define _VERSION_ "1.01.c"
+#define _VERSION_ "1.01.d"
 #if __has_include("box_setup.h")
 #include "box_setup.h"
 #endif
@@ -33,13 +33,13 @@
                                                   }
 #endif
 #ifndef AMBIENT_PIN
-#define AMBIENT_PIN 0
+#define AMBIENT_PIN 3
 #endif
 /*-----------------*/
 /* Global settings */
 /*-----------------*/
-// PIN settings
-#define PIN_NAME_LEN 10                      //length of PIN identificator
+// Credential settings
+#define CRED_NAME_LEN 10                      // length of credential name
 #define PIN_CODE_LEN 8                      // lenght of the PIN itself
 
 // Packet numbers are text; lengths exclude the terminating NUL.
@@ -56,7 +56,7 @@
 #define PASS_ENTRY_TIMEOUT      30          //sec: if password not fully entered within timeout, the entry is discarded and state changet do HOME
 
 // Ambient light settings
-#define AMBIENT_TIMEOUT         10000       // how long to keep ambient light on after door closes, in milliseconds
+#define AMBIENT_TIMEOUT         5000       // how long to keep ambient light on after door closes, in milliseconds
 
 
 // Presence code settings
@@ -208,14 +208,13 @@
 #define COMM_GET_DOOR_STATE "get_door"
 #define COMM_WATCHDOG_PING "_ping_"
 #define COMM_WATCHDOG_PONG "_pong_"
-#define COMM_SET_PIN "set_pin"
+#define COMM_SET_CRED "set_cred"
+#define COMM_CREDS "c_setcred"
 #define COMM_GET_AMBIENT "get_ambient"
-#define COMM_GET_PINS "get_pins"
-#define COMM_GET_PIN_INFO "get_PinInfo"
+#define COMM_GET_CREDS "get_creds"
 #define COMM_OPEN_BOX "opendoor"
 #define COMM_VISIBILITY "c_visibility"
 #define COMM_CONTENT "c_content"
-#define COMM_GET_PAGER "get_pager"
 #define COMM_GET_DIAGNOSTICS "get_diagnostics"
 #define COMM_SNAPSHOT_DIAGNOSTICS "snapshot_diagnostics"
 #define COMM_GET_DIAGNOSTIC_SNAPSHOTS "get_diagnostic_snapshots"
@@ -231,8 +230,8 @@
 
 // Html beacons
 
-#define PIN_DELETE_BEACON "deletebutton"
-#define PIN_SAVE_BEACON "savebutton"
+#define CRED_DELETE_BEACON "deletebutton"
+#define CRED_SAVE_BEACON "savebutton"
 
 #define AMBIENT_ON_BEACON "ambient_state_on"
 #define AMBIENT_OFF_BEACON "ambient_state_off"
@@ -264,6 +263,12 @@
 #define MSG_CHECKPRESENCE "checkbox-presence"
 #define MSG_DISABLE "disable"
 #define MSG_ENABLE "enable"
+#define MSG_CODEID "codeid"
+#define MSG_CODENAME "codename"
+#define MSG_CODEVALUE "codevalue"
+#define MSG_CODEVALIDFROM "codefrom"
+#define MSG_CODEVALIDTO "codeto"
+
 
 /*--------------------*/
 /* Technical settings */

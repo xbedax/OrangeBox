@@ -1,4 +1,5 @@
 #include "config.h"
+#include "timeout.h"
 #include <Arduino.h>
 
 // Script state:
@@ -36,6 +37,7 @@
 #include <Preferences.h>
 #include "websocket.h"
 #include "pass_store.h"
+#include "cred_protocol.h"
 #include "box_display.h"
 #include "camera.h"
 #include "timer.h"
@@ -77,28 +79,32 @@ bool ledState = 0;                              // actual state of door lock (0-
 //bool doorOpen = 0;                              // actual state of door switch (0-closed,1-open)
 JsonDocument dispChange;                        // Json Variable to Hold Sensor Readings
 unsigned long currentMillis;                    // current time timer
-unsigned long startMillis = 0;                  // push button timer
-unsigned long switchTime = 0;
-//const long interval = 1000;                     // time to open lock DELETE
-unsigned long linkStatusMillis = 0;                   // wifi reconnect timer
+//unsigned long startMillis = 0;                  // push button timer ###VYHODIT
+//unsigned long switchTime = 0;                   // ###VYHODIT
+
+unsigned long linkStatusMillis = 0;             // Last WiFi status check
+bool linkStatusStarted = false;
 const long linkStatusInterval = LINK_CHECK_INTERVAL;                 // wifi reconnect delay
 unsigned long wifiRecoveryResetMillis = 0;
+bool wifiRecoveryActive = false;
 keyboardStatus keyboardState;                   // Structure to keep current keyboard info
-unsigned long statusLineTimeout = 0;            // Status line refresh control
+unsigned long statusLineStartedAt = 0;         // Status line refresh control
+bool statusLineStarted = false;
 char vpnLocalHost[16] = "127.0.0.1";
 
-
-// Common settings      ### cele smazat
-//const int ledPin = 0;
-//const int doorPin = 3;
-//const int doorDelay = 50;
+struct BoxStartInfo {
+  time_t startTime = 0;               // wall-clock time when a valid time source first became available
+  const char* timeSource = "unknown"; // "RTC" or "NTP", whichever provided startTime first
+  unsigned long currentMillis = 0;    // uptime (millis()) at the moment startTime was captured
+};
+BoxStartInfo lastStart;
 
 // Global instances
 GpioHAL gpioHal; // GPIO hardware abstraction layer instance
 TimerManager timerManager; // Timer manager instance
 WebSocketManager webSocketManager; // Websocket manager instance
 WebSocketLogTransport webSocketLogTransport; // Remote logger transport instance
-PinStorage pinStorage; // Pin storage instance
+CredStorage credStorage; // Credential storage instance
 BoxDisplay boxDisplay; // Box display instance
 BoxKeyboard boxKeyboard;
 BoxStateMachine boxStateMachine;
@@ -115,28 +121,21 @@ void refreshVpnLocalHost();
 bool startVpn();
 String buildDiagnosticsPage();
 
-uint32_t jsonUintOr(JsonObj data, const char* key, uint32_t fallback)
-{
-  JsonVariantConst value = data[key];
-  if (value.isNull()) {
-    return fallback;
+// Records the first wall-clock time obtained after boot, and where it came from; no-op once recorded.
+void recordStartTime(const char* source) {
+  if (lastStart.startTime != 0) {
+    return;
   }
-  if (value.is<unsigned long>()) {
-    return value.as<unsigned long>();
+  time_t nowEpoch = time(nullptr);
+  if (nowEpoch < static_cast<time_t>(RTC_MIN_VALID_UNIX_TIME)) {
+    return;
   }
-  if (value.is<const char*>()) {
-    const char* text = value.as<const char*>();
-    if (text == nullptr || text[0] == '\0') {
-      return fallback;
-    }
-    char* endptr = nullptr;
-    unsigned long parsed = strtoul(text, &endptr, 10);
-    if (endptr != nullptr && *endptr == '\0') {
-      return parsed;
-    }
-  }
-  return fallback;
+  lastStart.startTime = nowEpoch;
+  lastStart.timeSource = source;
+  lastStart.currentMillis = millis();
 }
+
+
 
 // Password handling variables
 uint8_t pass[PASS_MAX];
@@ -302,45 +301,12 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     }
 }
 
-// Websocket get_pins request handler
-// Reads pins from storage and returns them in JSON response. Request is expected to contain firstPin and pinCount parameters to specify which pins to return, e.g. for pagination in the UI.
-void handleGetPins(AsyncWebSocketClient *sender, JsonObj data)
+// Credential handlers share parsing/formatting with the native protocol tests.
+void handleGetCreds(AsyncWebSocketClient* sender, JsonObj data)
 {
-  uint32_t firstPinId = jsonUintOr(data, "pinId", jsonUintOr(data, MSG_PINID, 0));
-  uint32_t pinCount = jsonUintOr(data, "pinCount", jsonUintOr(data, "pincount", 100));
   JsonDocument response;
-  String pinsTable;
-
-  if (firstPinId == 0) {
-    firstPinId = 1;
-  }
-  if (pinCount == 0) {
-    pinCount = 100;
-  }
-  
-  size_t pinInfoSize = pinStorage.getPins(firstPinId, pinCount, pinsTable);
-  Serial.printf("[PinStore] handleGetPins: firstPinId=%u, pinCount=%u, active=%u, htmlLen=%u\n",
-                firstPinId, pinCount, static_cast<unsigned>(pinInfoSize), pinsTable.length());
-  response["pinrows"] = pinsTable;
-  response["pinrowcount"] = pinInfoSize;
-  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
-}
-
-// Websocket get_pins request handler
-// Reads pins from storage and returns them in JSON response. Request is expected to contain firstPin and pinCount parameters to specify which pins to return, e.g. for pagination in the UI.
-void handleGetPager(AsyncWebSocketClient *sender, JsonObj data)
-{
-  int8_t firstPinId = data["pinId"];
-  int8_t pinCount = data["pinCount"];
-  int8_t lastPinId = firstPinId + pinCount - 1;
-  
-  JsonDocument response;
-  String pinsTable;
-//  response["pinrows"] = pinStorage.getPins(firstPinId, pinCount, pinsTable);
-//  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
-// ### sem bude pot5eba napsat obsluhu stránkování, až to GUI bude umět, zatím jen log a prázdný response
-  logger.logPrint(SEVERITY_DEBUG, "handleGetPager called with firstPinId: " + String(firstPinId) + ", pinCount: " + String(pinCount) + ", lastPinId: " + String(lastPinId) + "\n", BOX_HOST_NAME, LOGAREA_SYSTEM); //###
-  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+  buildCredResponse(credStorage, data, response);
+  webSocketManager.sendMessage(sender, COMM_CREDS, response);
 }
 
 void handleGetDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
@@ -381,8 +347,6 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
   const char* doorNumStr = data["doornum"];
   char presenceCode[PRESENCE_CODE_LENGTH + 1] = {0};
 
-
-
   if (doorNumStr) {
     JsonDocument response; 
     char* endptr;
@@ -404,7 +368,7 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
         webSocketManager.sendMessage(sender, COMM_CONTENT, response);
         return;
       }
-      if(checkPresence && (millis() > boxStateMachine.getPresenceCodeExpiration() || strcmp(presenceCode, boxStateMachine.getPresenceCode()) != 0)) {
+      if(checkPresence && (!boxStateMachine.isPresenceCodeValid() || strcmp(presenceCode, boxStateMachine.getPresenceCode()) != 0)) {
         logger.logPrint(SEVERITY_ERROR, "Error: Invalid presence code " + String(presenceCode), BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Invalid presence code " + String(presenceCode);
         webSocketManager.sendMessage(sender, COMM_CONTENT, response);
@@ -424,138 +388,19 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
   }
 }
 
-void handleSetPin(AsyncWebSocketClient *sender, JsonObj data)
+void handleSetCred(AsyncWebSocketClient* sender, JsonObj data)
 {
-  const char* pinCommand;
-  pinCommand =  data["clicked"];
-	uint32_t pinId = 0;
-  bool dataChange = false;
-  JsonDocument statusResponse;
-
-  if ( data["pinid"] != nullptr ) {
-		pinId = data["pinid"];
-  } else {
-    pinId = 0; // default value for new pin
+  JsonDocument response;
+  const bool changed = applyCredChange(credStorage, data, response);
+  webSocketManager.sendMessage(sender, COMM_CREDS, response);
+  if (changed) {
+    // Each client reloads its current page, preserving its type and pagination.
+    JsonDocument notification;
+    notification["credType"] = response["credType"];
+    notification["changed"] = true;
+    webSocketManager.notifyClients(COMM_CREDS, notification);
   }
-  
-  if ( strcmp(pinCommand, PIN_DELETE_BEACON) == 0 ) {                   // delete pin
-		CacheRecord recToDelete;
-    recToDelete.pinId = data[MSG_PINID];
-    if (data[MSG_PINNAME] != nullptr) {
-      pinId = data[MSG_PINID];
-      recToDelete.name[0] = '\0';
-      strncat(recToDelete.name, data[MSG_PINNAME], PIN_NAME_LEN); 
-      recToDelete.pin[0] = '\0';
-      if (data[MSG_PINVALUE] != nullptr) {
-        strncat(recToDelete.pin, data[MSG_PINVALUE], PIN_CODE_LEN);
-      } else {
-        logger.logPrint(SEVERITY_ERROR, "Error deleting pin with id " + String(pinId) + ": pin not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
-        statusResponse[MSG_LASTRESULT] = "Error deleting pin with id " + String(pinId) + ": pin not provided";
-        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-        return;
-      }
-      if ( pinStorage.removePin(recToDelete) == pinId ) {
-        logger.logPrint(SEVERITY_INFO, "Pin " + String(pinId) + " / " + String(recToDelete.name) + " deleted successfully", BOX_HOST_NAME, LOGAREA_ACCESS);
-        statusResponse[MSG_LASTRESULT] = "Pin " + String(pinId) + " / " + String(recToDelete.name) + " deleted successfully";
-        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-        dataChange = true;
-      } else {
-        logger.logPrint(SEVERITY_ERROR, "Error deleting pin " + String(pinId) + " / " + String(recToDelete.name), BOX_HOST_NAME, LOGAREA_ACCESS);
-        statusResponse[MSG_LASTRESULT] = "Error deleting pin " + String(pinId) + " / " + String(recToDelete.name);
-        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-      }
-    } else {
-      logger.logPrint(SEVERITY_ERROR, "Error deleting pin with id " + String(pinId) + ": pin name not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
-      statusResponse[MSG_LASTRESULT] = "Error deleting pin with id " + String(pinId) + ": pin name not provided";
-      webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-    }
-  } else if ( strcmp(pinCommand, PIN_SAVE_BEACON) == 0 ) {                    // save or update pin
-    CacheRecord recToSave;
-    recToSave.pinId = pinId;
-    recToSave.name[0] = '\0';
-    recToSave.pin[0] = '\0';
-    if (data[MSG_PINNAME] != nullptr) {
-      strncat(recToSave.name, data[MSG_PINNAME], PIN_NAME_LEN);
-    } else {
-      logger.logPrint(SEVERITY_ERROR, "Error saving pin with id " + String(pinId) + ": pin name not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
-      statusResponse[MSG_LASTRESULT] = "Error saving pin with id " + String(pinId) + ": pin name not provided";
-      webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-      return;
-    }
-    if (data[MSG_PINVALUE] != nullptr) {
-      strncat(recToSave.pin, data[MSG_PINVALUE], PIN_CODE_LEN);
-    } else {
-      logger.logPrint(SEVERITY_ERROR, "Error saving pin with id " + String(pinId) + ": pin not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
-      statusResponse[MSG_LASTRESULT] = "Error saving pin with id " + String(pinId) + ": pin not provided";
-      webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-      return;
-    }
-    if (data[MSG_PINVALIDFROM] != nullptr) {
-      recToSave.validFrom = data[MSG_PINVALIDFROM];
-    } else {
-      recToSave.validFrom = DATE_FROM_UNLIMITED; // default value if not provided
-    }
-    if (data[MSG_PINVALIDTO] != nullptr) {
-      recToSave.validTo = data[MSG_PINVALIDTO];
-    } else {
-      recToSave.validTo = DATE_TO_UNLIMITED; // default value if not provided
-    }
-    if (data[MSG_REMAINING] != nullptr) {
-      recToSave.remaining = data[MSG_REMAINING];
-    } else {
-      recToSave.remaining = -1; // defaults to unlimited (-1), 0 means expired
-    }
-    if (data[MSG_DOORNUM] != nullptr) {
-      char* endptr;
-      unsigned long lnum = strtoul(data[MSG_DOORNUM], &endptr, 10);
-      if (lnum >= DOOR_UNKNOWN ||  *endptr != '\0') { // DOOR_UNKNOWN (255) is reserved for special purposes, no bigger numbers are allowed, and the string must be a valid number
-        logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
-        statusResponse[MSG_LASTRESULT] = "Error: Invalid door number " + String(lnum);
-        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-        return;
-      }
-      recToSave.doorNum = static_cast<uint8_t>(lnum);
-    } else {
-      recToSave.doorNum = 0; // UI zatim neposkytuje možnost nastavit číslo dveří, takže nastavíme na 0 pokud není řečeno jinak, ale v budoucnu by to mělo být součástí UI a pak se to bude brát z dat ###
-    }
-    Serial.printf("Saving pin: id=%u, name=%s, pin=%s, doorNum=%u, validFrom=%llu, validTo=%llu, remaining=%d\n", recToSave.pinId, recToSave.name, recToSave.pin, recToSave.doorNum, recToSave.validFrom, recToSave.validTo, recToSave.remaining); //###
-    if (pinId){                   // update existing pin
-      if ( pinStorage.updatePin(recToSave) ) {
-        logger.logPrint(SEVERITY_INFO, "Pin " + String(pinId) + " / " + String(recToSave.name) + " saved successfully\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-        statusResponse[MSG_LASTRESULT] = "Pin '" + String(pinId) + " / " + String(recToSave.name) + "' saved successfully";
-        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-        dataChange = true;
-      } else {
-        logger.logPrint(SEVERITY_ERROR, "Error saving pin " + String(pinId) + " / " + String(recToSave.name) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-        statusResponse[MSG_LASTRESULT] = "Error saving pin '" + String(pinId) + " / " + String(recToSave.name) + "'";
-
-        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-      } 
-    } else {                      // add new pin
-      uint32_t newPinId = pinStorage.addPin(recToSave);  
-      if ( newPinId ) {
-        logger.logPrint(SEVERITY_INFO, "Pin " + String(newPinId) + " / " + String(recToSave.name) + " added successfully\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-        statusResponse[MSG_LASTRESULT] = "Pin '" + String(newPinId) + " / " + String(recToSave.name) + "' added successfully";
-        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-        dataChange = true;
-      } else {
-        logger.logPrint(SEVERITY_ERROR, "Error adding new pin " + String(recToSave.name) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-        statusResponse[MSG_LASTRESULT] = "Error adding new pin '" + String(recToSave.name) + "'";
-        webSocketManager.sendMessage(sender, COMM_CONTENT, statusResponse);
-      }
-    }
-  }
-  if (dataChange) {
-    JsonDocument tableUpdate;
-    String pinsTable;
-    size_t pinInfoSize = pinStorage.getPins(1 , 100, pinsTable);    //$$$$$$$$$ hardcoded for now, bude potreba implementovat mechanismus notifikace zmeny pintable pro UI - kazdy klient si stahne tu stranku, kterou zrovna zobrazuje, a ta stranka pak bude posilat WS zpravy s požadavkem na aktualizaci tabulky, např. při otevření dialogu pro správu pinů, nebo po každé změně pinů, aby se zajistilo, že UI bude mít aktuální data, ale zároveň se nebude přetěžovat WS zprávami s aktualizací tabulky pro všechny klienty pokaždé, když dojde ke změně pinů, což by mohlo být časté a nemusí být relevantní pro všechny klienty najednou, takže je lepší nechat to na jednotlivých klientech, aby si řekli o aktualizaci tabulky, když ji potřebují)
-    tableUpdate["pinrows"] = pinsTable;
-    webSocketManager.notifyClients(COMM_CONTENT, tableUpdate);
-    Serial.println("Pin table update sent to clients, Update notification still not implemented");
-    // data["id"], data["name"], data["pin"], ...
-  }
-} // handleSetPin
-
+}
 
 void handleCapture(AsyncWebServerRequest *request) {
   while (xSemaphoreTake(imageMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
@@ -581,6 +426,24 @@ String buildDiagnosticsPage() {
   page += F("th{background:#143642;color:#fff}code{font-family:Consolas,monospace}p{color:#52616a}");
   page += F("a.button{display:inline-block;margin:0 8px 16px 0;padding:8px 10px;background:#143642;color:#fff;text-decoration:none}");
   page += F("</style></head><body><h1>BOX diagnostics</h1>");
+  page += F("<p><strong>Last start:</strong> ");
+  if (lastStart.startTime != 0) {
+    struct tm startInfo;
+    char startBuffer[24];
+    if (localtime_r(&lastStart.startTime, &startInfo) != nullptr &&
+        strftime(startBuffer, sizeof(startBuffer), "%Y-%m-%d %H:%M:%S", &startInfo) > 0) {
+      page += startBuffer;
+    } else {
+      page += String(static_cast<long>(lastStart.startTime));
+    }
+    page += F(" (source: ");
+    page += lastStart.timeSource;
+    page += F(", uptime at capture: ");
+    page += String(lastStart.currentMillis);
+    page += F(" ms)</p>");
+  } else {
+    page += F("not yet available</p>");
+  }
   page += F("<a class=\"button\" href=\"/diagnostics/snapshot\">Store snapshot</a>");
   page += F("<a class=\"button\" href=\"/diagnostics.txt\">Text</a>");
   page += F("<a class=\"button\" href=\"/diagnostics.json\">JSON</a>");
@@ -715,6 +578,7 @@ void setup() {
         logger.logPrint(SEVERITY_WARNING, "System time loaded from RTC with OSF set; waiting for NTP correction\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
       } else {
         logger.logPrint(SEVERITY_INFO, "System time loaded from RTC\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+        recordStartTime("RTC");
       }
     } else {
       logger.logPrint(SEVERITY_WARNING, "RTC available, but time is not trusted yet\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
@@ -808,10 +672,10 @@ void setup() {
   }
 
 
-  // Initialize PIN storage after the RTC load/NTP setup, so date-limited
+  // Initialize credential storage after the RTC load/NTP setup, so date-limited
   // records are evaluated against the best available time.
-  pinStorage.begin();
-  logger.logPrint(SEVERITY_INFO, "PIN storage init\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  credStorage.begin();
+  logger.logPrint(SEVERITY_INFO, "Credential storage init\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
 
   // Register webserver routes
   registerWebServerRoutes(webserver);
@@ -830,12 +694,11 @@ void setup() {
 
   webSocketManager.initializeWebSocket(&webserver);
   Serial.println("WebSocket initialized successfully");
-  webSocketManager.registerMessageHandler(COMM_SET_PIN,   handleSetPin);
+  webSocketManager.registerMessageHandler(COMM_SET_CRED,   handleSetCred);
   webSocketManager.registerMessageHandler(COMM_OPEN_BOX,   handleOpenBox);                  // open door
-  webSocketManager.registerMessageHandler(COMM_GET_PINS,   handleGetPins);                  // get pin list 
+  webSocketManager.registerMessageHandler(COMM_GET_CREDS,   handleGetCreds);                  // get credential list
   webSocketManager.registerMessageHandler(COMM_GET_DOOR_STATE,   handleGetDoors);           // get doors state
   webSocketManager.registerMessageHandler(COMM_GET_AMBIENT, handleGetAmbient);              // get ambient light state 
-  webSocketManager.registerMessageHandler(COMM_GET_PAGER, handleGetPager);                  // get pager state
   webSocketManager.registerMessageHandler(COMM_GET_DIAGNOSTICS, handleGetDiagnostics);
   webSocketManager.registerMessageHandler(COMM_SNAPSHOT_DIAGNOSTICS, handleSnapshotDiagnostics);
   webSocketManager.registerMessageHandler(COMM_GET_DIAGNOSTIC_SNAPSHOTS, handleGetDiagnosticSnapshots);
@@ -957,19 +820,22 @@ void checkLinkStatus() {
     if (wifiState) {
       Serial.println("WiFi lost");
       vpnManager.disconnect();
-      wifiRecoveryResetMillis = currentMillis + WIFI_RECOVERY_RESET_INTERVAL_MS;
+      wifiRecoveryResetMillis = currentMillis;
+      wifiRecoveryActive = true;
     }
 
-    if (wifiRecoveryResetMillis == 0) {
-      wifiRecoveryResetMillis = currentMillis + WIFI_RECOVERY_RESET_INTERVAL_MS;
+    if (!wifiRecoveryActive) {
+      wifiRecoveryResetMillis = currentMillis;
+      wifiRecoveryActive = true;
       WiFi.reconnect();
-    } else if (currentMillis >= wifiRecoveryResetMillis) {
+    } else if (timeoutElapsed(wifiRecoveryResetMillis, WIFI_RECOVERY_RESET_INTERVAL_MS, currentMillis)) {
       // Auto reconnect can remain stuck after an AP disappears. Restart the
       // association only after allowing the previous attempt to complete.
       Serial.println("Restarting WiFi association");
       WiFi.disconnect(false, false);
       WiFi.begin(ssid, password);
-      wifiRecoveryResetMillis = currentMillis + WIFI_RECOVERY_RESET_INTERVAL_MS;
+      wifiRecoveryResetMillis = currentMillis;
+      wifiRecoveryActive = true;
     }
     wifiState = 0;
     boxDisplay.setLinkStatus(ONLINE_STATUS_OFFLINE);
@@ -979,32 +845,37 @@ void checkLinkStatus() {
       wifiState = 1;
       startVpn();
     }
-    wifiRecoveryResetMillis = 0;
+    wifiRecoveryActive = false;
     boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
   }
-    linkStatusMillis = currentMillis + linkStatusInterval;
+    linkStatusMillis = currentMillis;
+    linkStatusStarted = true;
 } // checkWifi()
 
 void loop() {
   currentMillis = millis();
 
   if (boxRtc.update(currentMillis)) {
-    pinStorage.refreshCache();
+    credStorage.refreshCache();
+    recordStartTime("NTP");
   }
   timerManager.update(currentMillis);
   boxKeyboard.handleKeyboard(&keyboardState, &boxStateMachine);
+  // Keyboard events can start a timeout after the loop timestamp was sampled.
+  currentMillis = millis();
   boxStateMachine.update(currentMillis);
   logger.update(currentMillis);
 
   webSocketManager.update(currentMillis);
   vpnManager.update();
   ElegantOTA.loop();
-  if (currentMillis > linkStatusMillis) {
+  if (!linkStatusStarted || timeoutElapsed(linkStatusMillis, linkStatusInterval, currentMillis)) {
     checkLinkStatus();
   }
 
-  if ( statusLineTimeout < currentMillis ) {
-    statusLineTimeout = currentMillis + STATUSLINE_REFRESH_INTERVAL;
+  if ( !statusLineStarted || timeoutElapsed(statusLineStartedAt, STATUSLINE_REFRESH_INTERVAL, currentMillis) ) {
+    statusLineStartedAt = currentMillis;
+    statusLineStarted = true;
     uint8_t clientCount = webSocketManager.getClientCount();
     boxDisplay.setCommunicationStatus(clientCount <= 9 ? char(clientCount + '0') : '+');
     boxDisplay.setLoggerStatus(webSocketLogTransport.hasPendingOutput() ? LOGGER_STATUS_DISCONNECTED : LOGGER_STATUS_CONNECTED);

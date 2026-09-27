@@ -7,15 +7,15 @@
 #include "gpio_hal.h"
 
 /*
-    PinStorage class manages a double linked list of PinRecords stored in Preferences.
-    Each record has a unique pinId and links to the previous and next records in the chain.
-    The chain is anchored by two special records with pinId=0 (HEAD) and pinId=0xffffffff (TAIL).
-    The class provides methods to add, update, remove, and retrieve pins, as well as to validate pins and perform garbage collection.
+    CredStorage class manages a double linked list of CredRecords stored in Preferences.
+    Each record has a unique credId and links to the previous and next records in the chain.
+    The chain is anchored by two special records with credId=0 (HEAD) and credId=0xffffffff (TAIL).
+    The class provides methods to add, update, remove, and retrieve credentials, as well as to validate credentials and perform garbage collection.
 
     Sentinel records
-    pinId           role    prevId                                  nextId 
+    credId           role    prevId                                  nextId
     0x00000000      HEAD    — (self or ignored)                     first real record (or TAIL if empty)
-    0xFFFFFFFF      TAIL    last real record (or HEAD if empty)     next free pinId for new insertions
+    0xFFFFFFFF      TAIL    last real record (or HEAD if empty)     next free credId for new insertions
 
     Fault tolerant insertion sequence — 3 writes:
         Relink (TAIL.prevId).nextId → newId
@@ -29,49 +29,25 @@
         Relink (del.nextId).prevId → del.prevId 
     (redo if step 1 is done)   
 
-    pinsCache (a simple array of cacheRecords) used to speedup access to active pins, rebuild from storage on startup, update on add/update/remove operations when eeprom change successful, verify chain links before update/remove operations to avoid cache desync
+    credsCache (a simple array of cacheRecords) used to speedup access to active credentials, rebuild from storage on startup, update on add/update/remove operations when eeprom change successful, verify chain links before update/remove operations to avoid cache desync
 */   
 
 
-/*
-tohle je treba presunout do main
-    void begin() {
-        
-        PinRepository = new PinStorage();
-        PinRepository->begin();
-        PinRepository->getPins();
-        PinRepository->garbageCollect();
-    }
+bool validateCred(const CacheRecord& p);
 
- */   
-
-/*
-------------------- public functions -------------------------
-    bool begin();
-    uint32_t addPin(const CacheRecord &pin);
-    bool updatePin(const CacheRecord &pin);
-    uint32_t removePin(uint32_t pinId);
-    size_t getPins(std::vector<PinRecord>& pinsTable);
-    void garbageCollect();
-    uint8_t verifyPin(const char* pinValue, PinType pinType = PinType::Password);
-    bool usedPin(uint8_t doorNum);
-*/ 
-
-bool validatePin(const CacheRecord& p);
-
-static bool isCredentialType(PinType type) {
-    return type == PinType::Password || type == PinType::PacketNumber;
+static bool isCredentialType(CredType type) {
+    return type == CredType::Password || type == CredType::PacketNumber;
 }
 
-static bool validateCredential(const char* value, PinType type) {
+static bool validateCredential(const char* value, CredType type) {
     if (!value || !isCredentialType(type)) return false;
-    const size_t minimum = type == PinType::Password ? MIN_PIN_LENGTH : PACKET_NUMBER_MIN;
-    const size_t maximum = type == PinType::Password ? MAX_PIN_LENGTH : PACKET_NUMBER_MAX;
+    const size_t minimum = type == CredType::Password ? MIN_PIN_LENGTH : PACKET_NUMBER_MIN;
+    const size_t maximum = type == CredType::Password ? MAX_PIN_LENGTH : PACKET_NUMBER_MAX;
     const size_t length = strnlen(value, maximum + 1);
     if (length < minimum || length > maximum) return false;
     for (size_t i = 0; i < length; ++i) {
         const unsigned char ch = static_cast<unsigned char>(value[i]);
-        if (type == PinType::Password ? (ch < '0' || ch > '9') : (ch < 33 || ch > 126))
+        if (type == CredType::Password ? (ch < '0' || ch > '9') : (ch < 33 || ch > 126))
             return false;
     }
     return true;
@@ -79,10 +55,10 @@ static bool validateCredential(const char* value, PinType type) {
 
 template<typename Destination, typename Source>
 static void copyCredential(Destination& destination, const Source& source) {
-    destination.pinType = source.pinType;
-    const size_t maximum = source.pinType == PinType::PacketNumber ? PACKET_NUMBER_MAX : MAX_PIN_LENGTH;
+    destination.credType = source.credType;
+    const size_t maximum = source.credType == CredType::PacketNumber ? PACKET_NUMBER_MAX : MAX_PIN_LENGTH;
     const size_t length = strnlen(source.credential(), maximum);
-    if (source.pinType == PinType::PacketNumber) {
+    if (source.credType == CredType::PacketNumber) {
         // Indexed assignment also activates the packetNumber member of the union.
         for (size_t i = 0; i < PACKET_NUMBER_MAX; ++i)
             destination.packetNumber[i] = i < length ? source.packetNumber[i] : '\0';
@@ -94,15 +70,15 @@ static void copyCredential(Destination& destination, const Source& source) {
     }
 }
 
-static const uint32_t PIN_GC_MAX_SCAN_ID = 4096;
+static const uint32_t CRED_GC_MAX_SCAN_ID = 4096;
 
-static bool isRealPinId(uint32_t pinId) {
-    return pinId != FIRST_KEY && pinId != LAST_KEY;
+static bool isRealCredId(uint32_t credId) {
+    return credId != FIRST_KEY && credId != LAST_KEY;
 }
 
-static CacheRecord toCacheRecord(const PinRecord& rec) {
+static CacheRecord toCacheRecord(const CredRecord& rec) {
     CacheRecord cacheRec = {};
-    cacheRec.pinId = rec.pinId;
+    cacheRec.credId = rec.credId;
     cacheRec.validFrom = rec.validFrom;
     cacheRec.validTo = rec.validTo;
     cacheRec.doorNum = rec.doorNum;
@@ -113,66 +89,64 @@ static CacheRecord toCacheRecord(const PinRecord& rec) {
     return cacheRec;
 }
 
-bool PinStorage::updatePin(const CacheRecord& rec) {
+bool CredStorage::updateCred(const CacheRecord& rec) {
 
-    if (!validatePin(rec)) {
-        Serial.println("[PinStore] updatePin: invalid pin");
+    if (!validateCred(rec)) {
+        Serial.println("[CredStore] updateCred: invalid credential");
         return false;
     }
 
     if (!update(rec)) return false;
 
-    for (auto& record : pinsCache) {
-        if (record.pinId == rec.pinId) {
-            record.doorNum = rec.doorNum;
-            record.remaining = rec.remaining;
-            record.validFrom = rec.validFrom;
-            record.validTo = rec.validTo;
-            break;
+    for (auto& record : credsCache) {
+        if (record.credId == rec.credId) {
+            record = rec;
+            return true;
         }
     }
+    credsCache.push_back(rec);
     return true;
 }
 
 
-// Add new pin, return true if added successfully, false otherwise (e.g. invalid pin or storage failure)
-uint32_t PinStorage::addPin(const CacheRecord& rec) {
-    if (!validatePin(rec)) {
-        Serial.println("[PinStore] addPin: invalid pin");
+// Add new credential, return true if added successfully, false otherwise (e.g. invalid credential or storage failure)
+uint32_t CredStorage::addCred(const CacheRecord& rec) {
+    if (!validateCred(rec)) {
+        Serial.println("[CredStore] addCred: invalid credential");
         return 0;
     }
     CacheRecord newRec = rec;
-    PinRecord pinRec = {};
-    pinRec.pinId = 0; // will be assigned in writePin
-    strncpy(pinRec.name, rec.name, MAX_NAME_LENGTH);
-    pinRec.name[MAX_NAME_LENGTH] = '\0';
-    copyCredential(pinRec, rec);
-    pinRec.validFrom = rec.validFrom;
-    pinRec.validTo = rec.validTo;
-    pinRec.remaining = rec.remaining;
-    pinRec.doorNum = rec.doorNum;
-    uint32_t newId = writePin(pinRec);
+    CredRecord credRec = {};
+    credRec.credId = 0; // will be assigned in writeCred
+    strncpy(credRec.name, rec.name, MAX_NAME_LENGTH);
+    credRec.name[MAX_NAME_LENGTH] = '\0';
+    copyCredential(credRec, rec);
+    credRec.validFrom = rec.validFrom;
+    credRec.validTo = rec.validTo;
+    credRec.remaining = rec.remaining;
+    credRec.doorNum = rec.doorNum;
+    uint32_t newId = writeCred(credRec);
     if (newId == 0) {
-        Serial.println("[PinStore] addPin: failed to write new pin");
+        Serial.println("[CredStore] addCred: failed to write new credential");
         return 0;
     }
-    newRec.pinId = newId;
-    pinsCache.push_back(newRec);
+    newRec.credId = newId;
+    credsCache.push_back(newRec);
     return newId;
-} //addPin
+} //addCred
     
-uint8_t PinStorage::verifyPin(const char* pinEntered, PinType pinType) {
-    verifiedPinId = 0;
-    if (!validateCredential(pinEntered, pinType)) return DOOR_UNKNOWN;
+uint8_t CredStorage::verifyCred(const char* credEntered, CredType credType) {
+    verifiedCredId = 0;
+    if (!validateCredential(credEntered, credType)) return DOOR_UNKNOWN;
     time_t now = time(nullptr);
-    logger.logPrint(SEVERITY_DEBUG, "verifyPin: checking pin " + String(pinEntered) + " at time " + String(now) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-    for (auto& p : pinsCache) {
-        logger.logPrint(SEVERITY_DEBUG, "verifyPin: checking pinId=" + String(p.pinId) + ", name=" + String(p.name) + ", pin=" + String(p.credential()) + ", validFrom=" + String(p.validFrom) + ", validTo=" + String(p.validTo) + ", remaining=" + String(p.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-        if (p.pinType != pinType)
+    logger.logPrint(SEVERITY_DEBUG, "verifyCred: checking credential " + String(credEntered) + " at time " + String(now) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+    for (auto& p : credsCache) {
+        logger.logPrint(SEVERITY_DEBUG, "verifyCred: checking credId=" + String(p.credId) + ", name=" + String(p.name) + ", cred=" + String(p.credential()) + ", validFrom=" + String(p.validFrom) + ", validTo=" + String(p.validTo) + ", remaining=" + String(p.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+        if (p.credType != credType)
             continue;
-        if (pinType == PinType::Password
-                ? strcmp(p.pin, pinEntered) != 0
-                : strncmp(p.packetNumber, pinEntered, PACKET_NUMBER_MATCH) != 0)
+        if (credType == CredType::Password
+                ? strcmp(p.pin, credEntered) != 0
+                : strncmp(p.packetNumber, credEntered, PACKET_NUMBER_MATCH) != 0)
             continue;
         if (p.validFrom && now < p.validFrom)
             return DOOR_UNKNOWN;
@@ -180,158 +154,150 @@ uint8_t PinStorage::verifyPin(const char* pinEntered, PinType pinType) {
             return DOOR_UNKNOWN;
         if (p.remaining == 0)
             return DOOR_UNKNOWN;
-        verifiedPinId = p.pinId;
+        verifiedCredId = p.credId;
         return p.doorNum;
     }
-    return DOOR_UNKNOWN; // Pin not found or not valid
-} // verifyPin
+    return DOOR_UNKNOWN; // Credential not found or not valid
+} // verifyCred
 
-bool PinStorage::usedPin(uint8_t doorNum) {
-    if (verifiedPinId == 0) return false;
+bool CredStorage::usedCred(uint8_t doorNum) {
+    if (verifiedCredId == 0) return false;
     time_t now = time(nullptr);
-    for (auto& p : pinsCache) {
-        if (p.pinId != verifiedPinId || p.doorNum != doorNum)
+    for (auto& p : credsCache) {
+        if (p.credId != verifiedCredId || p.doorNum != doorNum)
             continue;
         if ((p.validFrom && now < p.validFrom)
             || (p.validTo && now > p.validTo)
             || p.remaining == 0) {
-            verifiedPinId = 0;
+            verifiedCredId = 0;
             return false;
         }
         if (p.remaining > 1) {
-            CacheRecord consumedPin = p;
-            consumedPin.remaining--;
-            if (!updatePin(consumedPin)) return false;
+            CacheRecord consumedCred = p;
+            consumedCred.remaining--;
+            if (!updateCred(consumedCred)) return false;
         } else if (p.remaining == 1) {
-            if (!removePin(p)) return false;
+            if (!removeCred(p)) return false;
         }
-        verifiedPinId = 0;
+        verifiedCredId = 0;
         return true;
     }
-    verifiedPinId = 0;
+    verifiedCredId = 0;
     return false;
-} // usedPin
+} // usedCred
 
 //
-uint32_t PinStorage::removePin(const CacheRecord& rec) {
-    PinRecord pinRec;
+uint32_t CredStorage::removeCred(const CacheRecord& rec) {
+    CredRecord credRec;
     char prevKey[ID_LENGTH + 1];
     char nextKey[ID_LENGTH + 1];
 
-    if (!readData(rec.pinId, pinRec)) {
-        Serial.printf("[PinStore] removePin: record with pinId=%u not found\n", rec.pinId);
+    if (!readData(rec.credId, credRec)) {
+        Serial.printf("[CredStore] removeCred: record with credId=%u not found\n", rec.credId);
         return 0;
     }
-    if (!verifyLocalChain(rec.pinId)) {
-        Serial.printf("[PinStore] update: pinId=%u not properly chained\n", rec.pinId);
+    if (!verifyLocalChain(rec.credId)) {
+        Serial.printf("[CredStore] update: credId=%u not properly chained\n", rec.credId);
         return 0;
     }
-    if (!validateCredential(rec.credential(), rec.pinType)
-        || pinRec.pinType != rec.pinType
-        || strncmp(pinRec.name, rec.name, MAX_NAME_LENGTH + 1) != 0
-        || strcmp(pinRec.credential(), rec.credential()) != 0) {
-        Serial.printf("[PinStore] removePin: name or pin mismatch for pinId=%u\n", rec.pinId);
+    if (!validateCredential(rec.credential(), rec.credType)
+        || credRec.credType != rec.credType
+        || strncmp(credRec.name, rec.name, MAX_NAME_LENGTH + 1) != 0
+        || strcmp(credRec.credential(), rec.credential()) != 0) {
+        Serial.printf("[CredStore] removeCred: name or credential mismatch for credId=%u\n", rec.credId);
         return 0;
     }
     // update links of prev and next records
-    PinRecord prevRec;
-    PinRecord nextRec;
-    if (!readData(pinRec.prevId, prevRec)) {
-        Serial.printf("[PinStore] removePin: failed to read prev record with id=%u\n", pinRec.prevId);
+    CredRecord prevRec;
+    CredRecord nextRec;
+    if (!readData(credRec.prevId, prevRec)) {
+        Serial.printf("[CredStore] removeCred: failed to read prev record with id=%u\n", credRec.prevId);
         return 0;
     }
-    if (!readData(pinRec.nextId, nextRec)) {
-        Serial.printf("[PinStore] removePin: failed to read next record with id=%u\n", pinRec.nextId);
+    if (!readData(credRec.nextId, nextRec)) {
+        Serial.printf("[CredStore] removeCred: failed to read next record with id=%u\n", credRec.nextId);
         return 0;
     }
-    prevRec.nextId = pinRec.nextId;
-    nextRec.prevId = pinRec.prevId;
-    pinKey(prevRec.pinId, prevKey);
+    prevRec.nextId = credRec.nextId;
+    nextRec.prevId = credRec.prevId;
+    credKey(prevRec.credId, prevKey);
     writeData(prevRec);                                    // update prev record
     char recKey[ID_LENGTH + 1];
-    pinKey(rec.pinId, recKey);
+    credKey(rec.credId, recKey);
     prefs.remove(recKey);                                   // remove the record
-    pinKey(nextRec.pinId, nextKey);
+    credKey(nextRec.credId, nextKey);
     writeData(nextRec);                                    // update next record
 
-    for (auto it = pinsCache.begin(); it != pinsCache.end(); ++it) {
-        if (it->pinId == rec.pinId) {
-            pinsCache.erase(it);
+    for (auto it = credsCache.begin(); it != credsCache.end(); ++it) {
+        if (it->credId == rec.credId) {
+            credsCache.erase(it);
             break;
         }
     }
 
-    return rec.pinId;
-} // removePin
+    return rec.credId;
+} // removeCred
 
-static String htmlText(const char* value) {
-    String result;
-    for (; *value; ++value) {
-        switch (*value) {
-        case '&': result += "&amp;"; break;
-        case '<': result += "&lt;"; break;
-        case '>': result += "&gt;"; break;
-        default: result += String(*value); break;
-        }
-    }
-    return result;
+bool CredStorage::getCred(uint32_t credId, CacheRecord& cred, CredType credType) {
+    CredRecord stored = {};
+    if (!isRealCredId(credId) || !isCredentialType(credType)
+        || !readData(credId, stored) || stored.credId != credId || stored.credType != credType
+        || !isStoredCredValid(stored)) return false;
+    cred = toCacheRecord(stored);
+    return true;
 }
 
-size_t PinStorage::getPins(uint32_t firstPinId, uint32_t numPins, String &pinsTable, PinType pinType)
-{
-    pinsTable.clear();
-    //pinsTable->reserve(pinsCache.size());
-    uint32_t PinsFound = 0;
-    for (const auto& rec : pinsCache) {
-//        PinRecord pin;
-//        pin.pinId = rec.pinId;
-//        pin.prevId = 0;
-//        pin.nextId = 0;
-        logger.logPrint(SEVERITY_DEBUG, "getPins: checking pinId=" + String(rec.pinId) + ", name=" + String(rec.name) + ", pin=" + String(rec.credential()) + ", validFrom=" + String(rec.validFrom) + ", validTo=" + String(rec.validTo) + ", remaining=" + String(rec.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-        if ((pinType == PinType::All || rec.pinType == pinType)
-            && rec.pinId >= firstPinId && PinsFound < numPins) {
-            PinsFound++;
-            logger.logPrint(SEVERITY_DEBUG, "getPins: adding pinId=" + String(rec.pinId) + ", name=" + String(rec.name)  + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
-            pinsTable += "<tr><td>" + String(rec.pinId) + "</td><td>" + htmlText(rec.name) + "</td><td>" + htmlText(rec.credential()) + "</td><td>" + String(rec.validFrom) + "</td><td>" + String(rec.validTo) + "</td><td>" + String(rec.remaining) + "</td></tr>";
+size_t CredStorage::getCreds(uint32_t firstCredId, uint32_t numCreds,
+                            std::vector<CacheRecord>& creds, CredType credType) {
+    creds.clear();
+    if (numCreds == 0 || (credType != CredType::All && !isCredentialType(credType))) return 0;
+    const time_t now = time(nullptr);
+    for (const auto& cred : credsCache) {
+        if ((cred.validFrom && now < cred.validFrom) || (cred.validTo && now > cred.validTo)
+            || cred.remaining == 0) continue;
+        if (cred.credId >= firstCredId
+            && (credType == CredType::All || cred.credType == credType)) {
+            creds.push_back(cred);
+            if (creds.size() == numCreds) break;
         }
     }
-    return PinsFound;
-} // getPins
+    return creds.size();
+}
 
 /*
 --------------internal functions-------------------------
 
-    void pinKey(uint32_t id, char out[ID_LENGTH + 1]);
-    bool readData(uint32_t id, PinRecord& rec);
-    bool isValid(const PinRecord& rec);
-    bool registerUse(const char* pinEntered);
-    uint32_t writePin(const PinRecord &pinIn);
-    bool verifyLocalChain(uint32_t pinId);  
+    void credKey(uint32_t id, char out[ID_LENGTH + 1]);
+    bool readData(uint32_t id, CredRecord& rec);
+    bool isValid(const CredRecord& rec);
+    bool registerUse(const char* credEntered);
+    uint32_t writeCred(const CredRecord &credIn);
+    bool verifyLocalChain(uint32_t credId);
 */
 
 
 // Handle update of password entry
-bool PinStorage::update(const CacheRecord& cacheRec) {
+bool CredStorage::update(const CacheRecord& cacheRec) {
     // Verify record exists in chain before overwriting data
-    PinRecord pinRec;
+    CredRecord credRec;
 
-    if (!readData(cacheRec.pinId, pinRec)) {
-        Serial.printf("[PinStore] update: record with pinId=%u not found\n", cacheRec.pinId);
+    if (!readData(cacheRec.credId, credRec)) {
+        Serial.printf("[CredStore] update: record with credId=%u not found\n", cacheRec.credId);
         return false;
     }   
-    if (pinRec.pinType != cacheRec.pinType
-        || strcmp(pinRec.name, cacheRec.name) != 0
-        || strcmp(pinRec.credential(), cacheRec.credential()) != 0) {
-        Serial.printf("[PinStore] update: name or pin mismatch for pinId=%u\n", cacheRec.pinId);
+    if (credRec.credType != cacheRec.credType
+        || strcmp(credRec.name, cacheRec.name) != 0
+        || strcmp(credRec.credential(), cacheRec.credential()) != 0) {
+        Serial.printf("[CredStore] update: name or credential mismatch for credId=%u\n", cacheRec.credId);
         return false;
     }
-    pinRec.validFrom = cacheRec.validFrom;
-    pinRec.validTo = cacheRec.validTo;
-    pinRec.remaining = cacheRec.remaining;
-    pinRec.doorNum = cacheRec.doorNum;                                 //### upravit až bude číslo dveří v UI
+    credRec.validFrom = cacheRec.validFrom;
+    credRec.validTo = cacheRec.validTo;
+    credRec.remaining = cacheRec.remaining;
+    credRec.doorNum = cacheRec.doorNum;                                 //### upravit až bude číslo dveří v UI
 
-    if (!writePin(pinRec)) {
-        Serial.printf("[PinStore] update: write failed for pinId=%u\n", pinRec.pinId);
+    if (!writeCred(credRec)) {
+        Serial.printf("[CredStore] update: write failed for credId=%u\n", credRec.credId);
         return false;
     }
     return true;
@@ -339,112 +305,112 @@ bool PinStorage::update(const CacheRecord& cacheRec) {
 
 
 
-// Record Key formatting: 8 hex digits of pinId + 0x00  
-void PinStorage::pinKey(uint32_t id, char out[ID_LENGTH + 1]) {
+// Record Key formatting: 8 hex digits of credId + 0x00
+void CredStorage::credKey(uint32_t id, char out[ID_LENGTH + 1]) {
     snprintf(out, ID_LENGTH + 1, "%08X", id);
 }
 
-bool PinStorage::readData(uint32_t id, PinRecord& rec) {
+bool CredStorage::readData(uint32_t id, CredRecord& rec) {
     char key[ID_LENGTH + 1];
-    pinKey(id, key);
-    if (prefs.getBytesLength(key) != sizeof(PinRecord)) return false;
-    PinRecord stored = {};
+    credKey(id, key);
+    if (prefs.getBytesLength(key) != sizeof(CredRecord)) return false;
+    CredRecord stored = {};
     if (prefs.getBytes(key, &stored, sizeof(stored)) != sizeof(stored)
         || stored.recordType != RecordType::CredentialV1) return false;
     rec = stored;
     return true;
 }
 
-// Check if the pin attributes contain valid values (length, characters, date range)
-bool validatePin(const CacheRecord& p) {
-    if (!validateCredential(p.credential(), p.pinType)) return false;
+// Check if the credential attributes contain valid values (length, characters, date range)
+bool validateCred(const CacheRecord& p) {
+    if (!validateCredential(p.credential(), p.credType)) return false;
     const size_t nameLength = strnlen(p.name, MAX_NAME_LENGTH + 1);
     if (nameLength == 0 || nameLength > MAX_NAME_LENGTH)
         return false;
     if (p.validFrom && p.validTo && p.validFrom > p.validTo)
         return false;
     return true;
-} // validatePin
+} // validateCred
 
 
-// Insert new record into the chain, update prev and next records accordingly, return new pinId
-uint32_t PinStorage::writePin(const PinRecord &pinIn)
+// Insert new record into the chain, update prev and next records accordingly, return new credId
+uint32_t CredStorage::writeCred(const CredRecord &credIn)
 {
-    PinRecord pin = pinIn;
-    PinRecord storedpin;
-    PinRecord lastpin;
-    PinRecord prevpin;
+    CredRecord cred = credIn;
+    CredRecord storedCred;
+    CredRecord lastCred;
+    CredRecord prevCred;
     char recKey[ID_LENGTH + 1];
     char prevKey[ID_LENGTH + 1];
 
-    Serial.printf("[PinStore] writePin: pinId=%u, name=%s, pin=%s, doorNum=%u, validFrom=%llu, validTo=%llu, remaining=%d\n",
-                  pin.pinId, pin.name, pin.credential(), pin.doorNum, pin.validFrom, pin.validTo, pin.remaining); // ###
-    if (pinIn.pinId == 0 || !readData(pinIn.pinId, storedpin)) {   // not found, create new record
-        if (!readData(LAST_KEY, lastpin)) {
-            Serial.println("[PinStore] writePin: failed to read last record");
+    Serial.printf("[CredStore] writeCred: credId=%u, name=%s, cred=%s, doorNum=%u, validFrom=%llu, validTo=%llu, remaining=%d\n",
+                  cred.credId, cred.name, cred.credential(), cred.doorNum, cred.validFrom, cred.validTo, cred.remaining); // ###
+    if (credIn.credId == 0 || !readData(credIn.credId, storedCred)) {   // not found, create new record
+        if (!readData(LAST_KEY, lastCred)) {
+            Serial.println("[CredStore] writeCred: failed to read last record");
             return 0;
         }
-        pin.pinId = lastpin.nextId;
-        if (!readData(lastpin.prevId, prevpin)) {
-            Serial.printf("[PinStore] writePin: failed to read prev record with id=%u\n", lastpin.prevId);
+        cred.credId = lastCred.nextId;
+        if (!readData(lastCred.prevId, prevCred)) {
+            Serial.printf("[CredStore] writeCred: failed to read prev record with id=%u\n", lastCred.prevId);
             return 0;
         }
         
-        pin.nextId = LAST_KEY;
-        pin.prevId = lastpin.prevId;
-        prevpin.nextId = pin.pinId;
-        pinKey(prevpin.pinId, prevKey);
-        writeData(prevpin);
-        pinKey(pin.pinId, recKey);
-        writeData(pin);
-        lastpin.nextId = lastpin.nextId + 1;
-        lastpin.prevId = pin.pinId;
-        int written = writeData(lastpin) ? sizeof(lastpin) : 0;
+        cred.nextId = LAST_KEY;
+        cred.prevId = lastCred.prevId;
+        prevCred.nextId = cred.credId;
+        credKey(prevCred.credId, prevKey);
+        writeData(prevCred);
+        credKey(cred.credId, recKey);
+        writeData(cred);
+        lastCred.nextId = lastCred.nextId + 1;
+        lastCred.prevId = cred.credId;
+        int written = writeData(lastCred) ? sizeof(lastCred) : 0;
          if (written == 0 ) {
-            Serial.printf("[PinStore] update: failed to write pinId=%u\n", pin.pinId); 
+            Serial.printf("[CredStore] update: failed to write credId=%u\n", cred.credId);
             return 0;
         } else  {
-            Serial.printf("[PinStore] update: partial write for pinId=%u, written=%d\n  (of %d)", pin.pinId, written, sizeof(pin)); //###
+            Serial.printf("[CredStore] update: partial write for credId=%u, written=%d\n  (of %d)", cred.credId, written, sizeof(cred)); //###
             
         }
 
     } else {                                            // found, update data   
-        if (!verifyLocalChain(pin.pinId)) {
-            Serial.printf("[PinStore] update: pinId=%u not properly chained\n", pin.pinId);
+        if (!verifyLocalChain(cred.credId)) {
+            Serial.printf("[CredStore] update: credId=%u not properly chained\n", cred.credId);
             return 0;
         }
  
-        pinKey(pin.pinId, recKey);
-        int written = writeData(pin) ? sizeof(pin) : 0;
+        credKey(cred.credId, recKey);
+        int written = writeData(cred) ? sizeof(cred) : 0;
         if (written == 0 ) {
-            Serial.printf("[PinStore] update: failed to write pinId=%u\n", pin.pinId); 
+            Serial.printf("[CredStore] update: failed to write credId=%u\n", cred.credId);
             return 0;
         } else  {
-            Serial.printf("[PinStore] update: partial write for pinId=%u, written=%d\n  (of %d)", pin.pinId, written, sizeof(pin)); //###
+            Serial.printf("[CredStore] update: partial write for credId=%u, written=%d\n  (of %d)", cred.credId, written, sizeof(cred)); //###
             
         }
     }
-    return pin.pinId;
-} //writePin
+    return cred.credId;
+} //writeCred
 
 // Verify that the record with the given key is correctly linked in the chain (prevId and nextId point to valid records and link back to this record)
-bool PinStorage::verifyLocalChain(uint32_t pinId) {
-    PinRecord rec;
-    PinRecord prevrec;
-    PinRecord nextrec;
+bool CredStorage::verifyLocalChain(uint32_t credId) {
+    CredRecord rec;
+    CredRecord prevrec;
+    CredRecord nextrec;
 
-    if (!readData(pinId, rec))
+    if (!readData(credId, rec))
         return false;
-    if (rec.pinId == FIRST_KEY || rec.pinId == LAST_KEY)
+    if (rec.credId == FIRST_KEY || rec.credId == LAST_KEY)
         return true;
     if (!readData(rec.prevId, prevrec))
          return false;
     if (!readData(rec.nextId, nextrec))
         return false;
-    return prevrec.nextId == rec.pinId && nextrec.prevId == rec.pinId;
+    return prevrec.nextId == rec.credId && nextrec.prevId == rec.credId;
 }
 
-bool PinStorage::isActive(const PinRecord& rec) {
+bool CredStorage::isActive(const CredRecord& rec) {
     time_t now = time(nullptr);
     if (rec.validFrom && now < rec.validFrom)
         return false;
@@ -455,50 +421,51 @@ bool PinStorage::isActive(const PinRecord& rec) {
     return true;
 } // isActive
 
-bool PinStorage::rebuildCache() {
-    pinsCache.clear();
-    maxPinId = 0;
+bool CredStorage::rebuildCache() {
+    credsCache.clear();
+    maxCredId = 0;
 
     uint32_t cur = FIRST_KEY;
     if (!prefs.isKey(FIRST_KEY_KEY)) {
-        Serial.println("[PinStore] rebuildCache: HEAD unreadable");
+        Serial.println("[CredStore] rebuildCache: HEAD unreadable");
         return false;
     }
 
     while (cur != LAST_KEY) {
-        PinRecord curPin;
+        CredRecord curCred;
         CacheRecord cacheRec;
 
-        if (!readData(cur, curPin)) {
-            Serial.printf("[PinStore] rebuildCache: broken link at id=%u\n", cur);
+        if (!readData(cur, curCred)) {
+            Serial.printf("[CredStore] rebuildCache: broken link at id=%u\n", cur);
             break;
         }
 
-        // maxPinId tracks every real pinId regardless of validity
+        // maxCredId tracks every real credId regardless of validity
         if (cur != FIRST_KEY && cur != LAST_KEY) {
-            if (curPin.pinId > maxPinId) {
-                maxPinId = curPin.pinId;
+            if (curCred.credId > maxCredId) {
+                maxCredId = curCred.credId;
             }
-            if (isActive(curPin)) {
-                cacheRec = toCacheRecord(curPin);
-                pinsCache.push_back(cacheRec);
+            if (isActive(curCred)) {
+                cacheRec = toCacheRecord(curCred);
+                credsCache.push_back(cacheRec);
             }
         }
 
-        cur = curPin.nextId;
+        cur = curCred.nextId;
     }
 
-    Serial.printf("[PinStore] Cache: %zu active record(s), maxPinId=%u\n",
-                  pinsCache.size(), maxPinId);
+    Serial.printf("[CredStore] Cache: %zu active record(s), maxCredId=%u\n",
+                  credsCache.size(), maxCredId);
     return true;
 }
 
-bool PinStorage::begin()
+bool CredStorage::begin()
 {
+    // Keep the existing namespace: renaming the API must not discard stored data.
     if (!prefs.begin("pins", false)) return false;
     // TEMPORARY: discard the old, smaller test-data format. Remove after rollout.
-    if (prefs.isKey(FIRST_KEY_KEY) && prefs.getBytesLength(FIRST_KEY_KEY) < sizeof(PinRecord)) {
-        Serial.println("[PinStore] resetting legacy test-data pool");
+    if (prefs.isKey(FIRST_KEY_KEY) && prefs.getBytesLength(FIRST_KEY_KEY) < sizeof(CredRecord)) {
+        Serial.println("[CredStore] resetting legacy test-data pool");
         resetPool();
     }
     garbageCollect();
@@ -506,59 +473,59 @@ bool PinStorage::begin()
     return true;
 }
 
-bool PinStorage::refreshCache()
+bool CredStorage::refreshCache()
 {
     return rebuildCache();
 }
 
 #ifdef BOX_SIMULATION
-const std::vector<CacheRecord>& PinStorage::debugCache() const
+const std::vector<CacheRecord>& CredStorage::debugCache() const
 {
-    return pinsCache;
+    return credsCache;
 }
 #endif
 
-bool PinStorage::writeData(const PinRecord& rec) {
+bool CredStorage::writeData(const CredRecord& rec) {
     if (rec.recordType != RecordType::CredentialV1) return false;
     char key[ID_LENGTH + 1];
-    pinKey(rec.pinId, key);
+    credKey(rec.credId, key);
     return prefs.putBytes(key, &rec, sizeof(rec)) == sizeof(rec);
 }
 
-void PinStorage::resetPool() {
+void CredStorage::resetPool() {
     prefs.clear();
 
-    PinRecord head = {};
-    head.pinId = FIRST_KEY;
+    CredRecord head = {};
+    head.credId = FIRST_KEY;
     head.prevId = FIRST_KEY;
     head.nextId = LAST_KEY;
     writeData(head);
 
-    PinRecord tail = {};
-    tail.pinId = LAST_KEY;
+    CredRecord tail = {};
+    tail.credId = LAST_KEY;
     tail.prevId = FIRST_KEY;
     tail.nextId = 1;
     writeData(tail);
 
-    pinsCache.clear();
-    maxPinId = 0;
-    nextPinId = 1;
+    credsCache.clear();
+    maxCredId = 0;
+    nextCredId = 1;
 }
 
-bool PinStorage::ensurePool() {
-    PinRecord head = {};
-    PinRecord tail = {};
+bool CredStorage::ensurePool() {
+    CredRecord head = {};
+    CredRecord tail = {};
     bool hasHead = readData(FIRST_KEY, head);
     bool hasTail = readData(LAST_KEY, tail);
 
     if (!hasHead && !hasTail) {
-        Serial.println("[PinStore] GC: empty pin pool, creating sentinels");
+        Serial.println("[CredStore] GC: empty credential pool, creating sentinels");
         resetPool();
         return false;
     }
 
-    if (!hasHead || !hasTail || head.pinId != FIRST_KEY || tail.pinId != LAST_KEY) {
-        Serial.println("[PinStore] GC: corrupted sentinels, resetting pin pool");
+    if (!hasHead || !hasTail || head.credId != FIRST_KEY || tail.credId != LAST_KEY) {
+        Serial.println("[CredStore] GC: corrupted sentinels, resetting credential pool");
         resetPool();
         return false;
     }
@@ -566,40 +533,40 @@ bool PinStorage::ensurePool() {
     return true;
 }
 
-bool PinStorage::isStoredPinValid(const PinRecord& rec) {
-    if (!isRealPinId(rec.pinId)) {
+bool CredStorage::isStoredCredValid(const CredRecord& rec) {
+    if (!isRealCredId(rec.credId)) {
         return false;
     }
 
     if (rec.recordType != RecordType::CredentialV1
-        || !validateCredential(rec.credential(), rec.pinType)
+        || !validateCredential(rec.credential(), rec.credType)
         || strnlen(rec.name, MAX_NAME_LENGTH + 1) > MAX_NAME_LENGTH) return false;
     CacheRecord cacheRec = toCacheRecord(rec);
-    return validatePin(cacheRec);
+    return validateCred(cacheRec);
 }
 
 // Going from HEAD to TAIL, find the last reachable record in the chain, return true the last valid points to TAIL, false if the chain is broken or exceeds the maximum number of steps
-//bool PinStorage::findLastReachableFromHead(PinRecord& lastRec) {
-//    PinRecord current = {};
-//    if (!readData(FIRST_KEY, current) || current.pinId != FIRST_KEY) {
+//bool CredStorage::findLastReachableFromHead(CredRecord& lastRec) {
+//    CredRecord current = {};
+//    if (!readData(FIRST_KEY, current) || current.credId != FIRST_KEY) {
 //        return false;
 //    }
-//    for (uint32_t steps = 0; steps < PIN_GC_MAX_SCAN_ID; steps++) {
+//    for (uint32_t steps = 0; steps < CRED_GC_MAX_SCAN_ID; steps++) {
 //        if (current.nextId == LAST_KEY) {
 //            lastRec = current;
 //            return true;
 //        }
 //
-//        if (!isRealPinId(current.nextId)) {
+//        if (!isRealCredId(current.nextId)) {
 //            return false;
 //        }
 //
-//        PinRecord next = {};
-//        if (!readData(current.nextId, next) || next.pinId != current.nextId) {
+//        CredRecord next = {};
+//        if (!readData(current.nextId, next) || next.credId != current.nextId) {
 //            return false;
 //        }
 //
-//        if (!isStoredPinValid(next) || next.prevId != current.pinId) {
+//        if (!isStoredCredValid(next) || next.prevId != current.credId) {
 //            return false;
 //        }
 //
@@ -609,9 +576,9 @@ bool PinStorage::isStoredPinValid(const PinRecord& rec) {
 //    return false;
 //} // findLastReachableFromHead
 
-bool PinStorage::repairTailInsert() {
-    PinRecord tail = {};
-    if (!readData(LAST_KEY, tail) || tail.pinId != LAST_KEY) {
+bool CredStorage::repairTailInsert() {
+    CredRecord tail = {};
+    if (!readData(LAST_KEY, tail) || tail.credId != LAST_KEY) {
         return false;
     }
     if (tail.prevId == FIRST_KEY) {         // empty pool, nothing to repair, at least form insertion point of view
@@ -620,16 +587,16 @@ bool PinStorage::repairTailInsert() {
     if (tail.prevId == LAST_KEY) {          // to avoid infinite loop, this is an invalid state, should not happen
         return false;
     }
-    PinRecord tailPrev = {};
-    if (!readData(tail.prevId, tailPrev) || tailPrev.pinId != tail.prevId) {
+    CredRecord tailPrev = {};
+    if (!readData(tail.prevId, tailPrev) || tailPrev.credId != tail.prevId) {
         return false;
     }
     if (tailPrev.nextId == LAST_KEY) {      // no interrupted insert, everything is fine
         return true;
     }   
 
-//    PinRecord lastReachable = {};
-    PinRecord newRec = {};    
+//    CredRecord lastReachable = {};
+    CredRecord newRec = {};
 //    if (!findLastReachableFromHead(lastReachable)) {
 //        return false;
 //    }
@@ -638,76 +605,76 @@ bool PinStorage::repairTailInsert() {
 //        if (!findLastReachableFromHead(lastReachable)) {
 //            return false;
 //        }
-        Serial.printf("[PinStore] GC: rolled back interrupted insert, tailPrev.nextId=%u\n",
+        Serial.printf("[CredStore] GC: rolled back interrupted insert, tailPrev.nextId=%u\n",
                       tailPrev.nextId);
         tailPrev.nextId = LAST_KEY;
         writeData(tailPrev);
     } else {
-        Serial.printf("[PinStore] GC: found interrupted insert, tailPrev.nextId=%u\n", tailPrev.nextId);
-        if ( !isStoredPinValid(newRec) || newRec.nextId != LAST_KEY || newRec.prevId != tailPrev.pinId) {
+        Serial.printf("[CredStore] GC: found interrupted insert, tailPrev.nextId=%u\n", tailPrev.nextId);
+        if ( !isStoredCredValid(newRec) || newRec.nextId != LAST_KEY || newRec.prevId != tailPrev.credId) {
             return false;
         }
-        tail.prevId = newRec.pinId;
-        tailPrev.nextId = newRec.pinId + 1;
+        tail.prevId = newRec.credId;
+        tailPrev.nextId = newRec.credId + 1;
         writeData(tail);
     }
     return true;
 } // repairTailInsert
 
-bool PinStorage::repairDeleteGap(const PinRecord& prevRec, PinRecord& nextRec) {
+bool CredStorage::repairDeleteGap(const CredRecord& prevRec, CredRecord& nextRec) {
     uint32_t deletedId = nextRec.prevId;
-    if (!isRealPinId(deletedId) || deletedId == prevRec.pinId || deletedId == nextRec.pinId) {
-        Serial.println("[PinStore] GC: tangled chain, resetting pin pool");
+    if (!isRealCredId(deletedId) || deletedId == prevRec.credId || deletedId == nextRec.credId) {
+        Serial.println("[CredStore] GC: tangled chain, resetting credential pool");
         return false;
     }
 
-    PinRecord deleted = {};
+    CredRecord deleted = {};
     if (readData(deletedId, deleted)) {
-        if (deleted.pinId != deletedId
-            || deleted.prevId != prevRec.pinId
-            || deleted.nextId != nextRec.pinId
-            || !isStoredPinValid(deleted)) {
-                Serial.printf("[PinStore] GC: corrupted delete record pinId=%u, resetting pin pool\n", deletedId);
+        if (deleted.credId != deletedId
+            || deleted.prevId != prevRec.credId
+            || deleted.nextId != nextRec.credId
+            || !isStoredCredValid(deleted)) {
+                Serial.printf("[CredStore] GC: corrupted delete record credId=%u, resetting credential pool\n", deletedId);
             return false;
         }
         char key[ID_LENGTH + 1];
-        pinKey(deletedId, key);
+        credKey(deletedId, key);
         prefs.remove(key);
-        Serial.printf("[PinStore] GC: removed interrupted delete record pinId=%u\n",
+        Serial.printf("[CredStore] GC: removed interrupted delete record credId=%u\n",
                       deletedId);
     } else {
-        Serial.printf("[PinStore] GC: completed interrupted delete after removed pinId=%u\n",
+        Serial.printf("[CredStore] GC: completed interrupted delete after removed credId=%u\n",
                       deletedId);
     }
 
-    nextRec.prevId = prevRec.pinId;
+    nextRec.prevId = prevRec.credId;
     writeData(nextRec);
     return true;
 } // repairDeleteGap
 
-bool PinStorage::repairInterruptedDelete() {
-    PinRecord current = {};
-    if (!readData(FIRST_KEY, current) || current.pinId != FIRST_KEY) {
+bool CredStorage::repairInterruptedDelete() {
+    CredRecord current = {};
+    if (!readData(FIRST_KEY, current) || current.credId != FIRST_KEY) {
         return false;
     } 
 
-    for (uint32_t steps = 0; steps < PIN_GC_MAX_SCAN_ID; steps++) {
-        if (current.nextId == FIRST_KEY || current.nextId == current.pinId) {
+    for (uint32_t steps = 0; steps < CRED_GC_MAX_SCAN_ID; steps++) {
+        if (current.nextId == FIRST_KEY || current.nextId == current.credId) {
             return false;
         }
-        PinRecord next = {};
-        if (!readData(current.nextId, next) || next.pinId != current.nextId) {
+        CredRecord next = {};
+        if (!readData(current.nextId, next) || next.credId != current.nextId) {
             return false;
         }
-        if (isRealPinId(next.pinId) && !isStoredPinValid(next)) {
+        if (isRealCredId(next.credId) && !isStoredCredValid(next)) {
             return false;
         }
-        if (next.prevId != current.pinId) {
+        if (next.prevId != current.credId) {
             if (!repairDeleteGap(current, next)) {
                 return false;
             }
         }
-        if (next.pinId == LAST_KEY) {
+        if (next.credId == LAST_KEY) {
             return true;
         }
         current = next;
@@ -716,102 +683,102 @@ bool PinStorage::repairInterruptedDelete() {
     return false;
 } // repairInterruptedDelete
 
-bool PinStorage::repairPinChain() {
-    PinRecord current = {};
-    PinRecord tail = {};
-    PinRecord next = {};
-    PinRecord deleted = {};
-    if (!readData(LAST_KEY, tail) || tail.pinId != LAST_KEY) {                    //tail present?
+bool CredStorage::repairCredChain() {
+    CredRecord current = {};
+    CredRecord tail = {};
+    CredRecord next = {};
+    CredRecord deleted = {};
+    if (!readData(LAST_KEY, tail) || tail.credId != LAST_KEY) {                    //tail present?
         return false;
     } 
 
-    if (!readData(FIRST_KEY, current) || current.pinId != FIRST_KEY) {              //head present?
+    if (!readData(FIRST_KEY, current) || current.credId != FIRST_KEY) {              //head present?
         return false;
     } 
 
-    for (uint32_t steps = 0; steps < PIN_GC_MAX_SCAN_ID; steps++) {
-        Serial.printf ( "[PinStore] GC: traversing chain, current pinId=%u, nextId=%u\n", current.pinId, current.nextId);
-        if (current.nextId == FIRST_KEY || current.nextId == current.pinId) {
+    for (uint32_t steps = 0; steps < CRED_GC_MAX_SCAN_ID; steps++) {
+        Serial.printf ( "[CredStore] GC: traversing chain, current credId=%u, nextId=%u\n", current.credId, current.nextId);
+        if (current.nextId == FIRST_KEY || current.nextId == current.credId) {
             return false;
         }
         if (!readData(current.nextId, next) ){
-            if (current.pinId == tail.prevId ) {                                    // interrupted insert in step 1, roll back it
+            if (current.credId == tail.prevId ) {                                    // interrupted insert in step 1, roll back it
                 current.nextId = LAST_KEY;
                 writeData(current);
-                Serial.println("[PinStore] GC: rolled back broken insert");
+                Serial.println("[CredStore] GC: rolled back broken insert");
                 return true;
             } else {                                                                // severely damaged chain, cannot repair
-                Serial.println("[PinStore] GC: interrupted chain, resetting pin pool");
+                Serial.println("[CredStore] GC: interrupted chain, resetting credential pool");
                 return false;
             }
         }
-        if( next.pinId != current.nextId) {
-            Serial.println("[PinStore] GC: unexpected ID in chain, resetting pin pool");
+        if( next.credId != current.nextId) {
+            Serial.println("[CredStore] GC: unexpected ID in chain, resetting credential pool");
             return false;
         }
-        if (isRealPinId(next.pinId) && !isStoredPinValid(next)) {
-            Serial.println("[PinStore] GC: dubious record in chain, resetting pin pool");
+        if (isRealCredId(next.credId) && !isStoredCredValid(next)) {
+            Serial.println("[CredStore] GC: dubious record in chain, resetting credential pool");
             return false;
         }
-        if (next.prevId != current.pinId) {
+        if (next.prevId != current.credId) {
             if (next.prevId == current.prevId) {                                    // interrupted insert in step 2, complete it
-                if (next.pinId == LAST_KEY) {
-                    Serial.printf("[PinStore] GC: redoing unfinished insert, pinId %u\n", current.pinId);
-                    tail.prevId = current.pinId;
-                    tail.nextId = current.pinId + 1;
+                if (next.credId == LAST_KEY) {
+                    Serial.printf("[CredStore] GC: redoing unfinished insert, credId %u\n", current.credId);
+                    tail.prevId = current.credId;
+                    tail.nextId = current.credId + 1;
                     writeData(tail);
                     return true;
                 }
             } 
-            if (readData(next.prevId, deleted) && next.prevId == deleted.pinId) {    // interrupted delete in step 1, complete it
+            if (readData(next.prevId, deleted) && next.prevId == deleted.credId) {    // interrupted delete in step 1, complete it
                 char key[ID_LENGTH + 1];
-                pinKey(deleted.pinId, key);
+                credKey(deleted.credId, key);
                 prefs.remove(key);
-                Serial.printf("[PinStore] GC: removed interrupted delete record pinId=%u\n", deleted.pinId);
+                Serial.printf("[CredStore] GC: removed interrupted delete record credId=%u\n", deleted.credId);
             }
             if (!readData(next.prevId, deleted)) {                                      // interrupted delete in step 2, complete it
-                next.prevId = current.pinId;
+                next.prevId = current.credId;
                 writeData(next);
-                Serial.println("[PinStore] GC: completed interrupted delete");
+                Serial.println("[CredStore] GC: completed interrupted delete");
                 return true;
             }
-            Serial.println("[PinStore] GC: broken chain, resetting pin pool");
+            Serial.println("[CredStore] GC: broken chain, resetting credential pool");
             return false;
             if (!repairDeleteGap(current, next)) {
                 return false;
             }
         }
-        if (next.pinId == LAST_KEY) {
+        if (next.credId == LAST_KEY) {
             return true;
         }
         current = next;
     }
-    Serial.printf("[PinStore] GC: unable to traverse chain, resetting pool, last deleted pinId=%u\n", current.pinId);
+    Serial.printf("[CredStore] GC: unable to traverse chain, resetting pool, last deleted credId=%u\n", current.credId);
     return false;
-} // repairPinChain
+} // repairCredChain
 
 
-void PinStorage::garbageCollect()
+void CredStorage::garbageCollect()
 {
     if (!ensurePool()) {
         return;
     }
-    if (!repairPinChain()) {
-        Serial.println("[PinStore] GC: unrecoverable chain state, resetting pin pool");
+    if (!repairCredChain()) {
+        Serial.println("[CredStore] GC: unrecoverable chain state, resetting credential pool");
         resetPool();
 
     }
 
 //    if (!repairTailInsert()) {
-//        Serial.println("[PinStore] GC: unrecoverable tail insert state, resetting pin pool");
+//        Serial.println("[CredStore] GC: unrecoverable tail insert state, resetting credential pool");
 //        resetPool();
 //        return;
 //    }
 
 //    if (!repairInterruptedDelete()) {
-//        Serial.println("[PinStore] GC: unrecoverable chain state, resetting pin pool");
+//        Serial.println("[CredStore] GC: unrecoverable chain state, resetting credential pool");
 //        resetPool();
 //        return;
 //    }
-    Serial.println("[PinStore] GC: completed");
+    Serial.println("[CredStore] GC: completed");
 }

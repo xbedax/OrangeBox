@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "timeout.h"
 #include <WebServer.h>
 #include <WiFi.h>
 
@@ -23,7 +24,8 @@ const uint16_t localHttpPort = 80;
 
 WebServer helloServer(localHttpPort);
 char localHost[16] = "127.0.0.1";
-unsigned long nextStatusMillis = 0;
+unsigned long statusStartedAt = 0;
+bool statusStarted = false;
 
 void setLocalHostFromWiFi()
 {
@@ -137,8 +139,9 @@ void loop()
     vpnManager.update();
 
     unsigned long now = millis();
-    if (now >= nextStatusMillis) {
-        nextStatusMillis = now + 10000;
+    if (!statusStarted || timeoutElapsed(statusStartedAt, 10000, now)) {
+        statusStartedAt = now;
+        statusStarted = true;
         Serial.printf("VPN_STATE connected=%u state=%s bound=%d\n",
                       vpnManager.isConnected() ? 1 : 0,
                       vpnManager.getStateString().c_str(),

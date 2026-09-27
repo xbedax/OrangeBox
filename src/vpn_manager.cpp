@@ -1,4 +1,5 @@
 #include "vpn_manager.h"
+#include "timeout.h"
 
 #if __has_include(<ESP-Reverse_Tunneling_Libssh2.h>)
 #include <ESP-Reverse_Tunneling_Libssh2.h>
@@ -32,10 +33,6 @@ bool isPortSet(uint16_t port)
     return port != 0;
 }
 
-bool timeReached(uint32_t now, uint32_t timestamp)
-{
-    return timestamp == 0 || static_cast<int32_t>(now - timestamp) >= 0;
-}
 }
 
 VPNManager::VPNManager()
@@ -98,7 +95,7 @@ bool VPNManager::connectInternal()
     }
     if (tunnel->isConnected()) {
         state = VPNConnectionState::Connected;
-        nextConnectAttemptMs = 0;
+        reconnectDelayMs = 0;
         return true;
     }
     if (!initialized) {
@@ -112,7 +109,7 @@ bool VPNManager::connectInternal()
     state = VPNConnectionState::Connecting;
     if (tunnel->connectSSH()) {
         state = VPNConnectionState::Connected;
-        nextConnectAttemptMs = 0;
+        reconnectDelayMs = 0;
         return true;
     }
 
@@ -153,7 +150,7 @@ void VPNManager::disconnectInternal()
     }
 #endif
     state = configured ? VPNConnectionState::Disconnected : VPNConnectionState::Unconfigured;
-    nextConnectAttemptMs = 0;
+    reconnectDelayMs = 0;
     boundPort = 0;
 }
 
@@ -250,15 +247,15 @@ String VPNManager::getStateString() const
 
 uint32_t VPNManager::getNextReconnectDelayMs() const
 {
-    if (nextConnectAttemptMs == 0) {
+    if (reconnectDelayMs == 0) {
         return 0;
     }
 
     uint32_t now = millis();
-    if (timeReached(now, nextConnectAttemptMs)) {
+    if (timeoutElapsed(reconnectStartedAt, reconnectDelayMs, now)) {
         return 0;
     }
-    return nextConnectAttemptMs - now;
+    return timeoutRemaining(reconnectStartedAt, reconnectDelayMs, now);
 }
 
 bool VPNManager::hasBackend() const
@@ -302,7 +299,7 @@ bool VPNManager::isConfigValid(const VPNConfig& vpnConfig) const
 
 bool VPNManager::canAttemptConnect(uint32_t now) const
 {
-    return timeReached(now, nextConnectAttemptMs);
+    return timeoutElapsed(reconnectStartedAt, reconnectDelayMs, now);
 }
 
 bool VPNManager::backendLastFailureWasStaleListener() const
@@ -318,7 +315,8 @@ bool VPNManager::backendLastFailureWasStaleListener() const
 void VPNManager::scheduleReconnect(VPNConnectionState failureState, uint32_t delayMs)
 {
     state = failureState;
-    nextConnectAttemptMs = millis() + delayMs;
+    reconnectStartedAt = millis();
+    reconnectDelayMs = delayMs;
 }
 
 bool VPNManager::applyConfig(const VPNConfig& vpnConfig)
@@ -411,7 +409,7 @@ void VPNManager::workerLoop()
             disconnectInternal();
             config = command.config;
             initialized = false;
-            nextConnectAttemptMs = 0;
+            reconnectDelayMs = 0;
             configured = applyConfig(config);
             state = configured ? VPNConnectionState::Disconnected
                                : VPNConnectionState::ConfigInvalid;

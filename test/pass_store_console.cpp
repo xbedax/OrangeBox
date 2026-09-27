@@ -16,10 +16,15 @@
 #include "Preferences.h"
 #include "config.h"
 #include "pass_store.h"
+#include "cred_protocol.h"
+#include "logger.h"
 
-PinStorage pinStorage;
+Logger logger;
+void Logger::logPrint(uint8_t, const String&, const char*, uint8_t) {}
 
-static std::string formatPinKey(uint32_t id)
+CredStorage credStorage;
+
+static std::string formatCredKey(uint32_t id)
 {
     char key[ID_LENGTH + 1];
     std::snprintf(key, sizeof(key), "%08X", id);
@@ -139,9 +144,9 @@ static bool copyStringField(JsonObjectConst data, const char* key, char* dest, s
 static void printCacheRecord(const CacheRecord& rec)
 {
     std::cout
-        << "  id=" << rec.pinId
+        << "  id=" << rec.credId
         << " name=\"" << rec.name << "\""
-        << " pin=\"" << rec.pin << "\""
+        << " cred=\"" << rec.credential() << "\""
         << " door=" << static_cast<unsigned>(rec.doorNum)
         << " from=" << rec.validFrom
         << " to=" << rec.validTo
@@ -151,7 +156,7 @@ static void printCacheRecord(const CacheRecord& rec)
 
 static void dumpCache()
 {
-    const auto& cache = pinStorage.debugCache();
+    const auto& cache = credStorage.debugCache();
     std::cout << "\n[CACHE] active records: " << cache.size() << "\n";
     if (cache.empty()) {
         std::cout << "  <empty>\n";
@@ -161,9 +166,9 @@ static void dumpCache()
         printCacheRecord(rec);
     }
 
-    String pinsTable;
-    size_t total = pinStorage.getPins(0, 255, pinsTable);
-    std::cout << "[CACHE:getPins] total=" << total << " html=" << pinsTable << "\n";
+    std::vector<CacheRecord> creds;
+    size_t total = credStorage.getCreds(0, 255, creds, CredType::All);
+    std::cout << "[CACHE:getCreds] total=" << total << "\n";
 }
 
 static void printHexBytes(const std::vector<uint8_t>& bytes)
@@ -194,16 +199,16 @@ static void dumpPreferences()
     for (const auto& key : keys) {
         const auto& bytes = ns.at(key);
         std::cout << "  key=" << key << " bytes=" << bytes.size();
-        if (bytes.size() == sizeof(PinRecord)) {
-            PinRecord rec = {};
+        if (bytes.size() == sizeof(CredRecord)) {
+            CredRecord rec = {};
             std::memcpy(&rec, bytes.data(), sizeof(rec));
             std::cout
-                << " id=" << rec.pinId
+                << " id=" << rec.credId
                 << " prev=" << rec.prevId
                 << " next=" << rec.nextId
                 << " door=" << static_cast<unsigned>(rec.doorNum)
                 << " name=\"" << rec.name << "\""
-                << " pin=\"" << rec.pin << "\""
+                << " cred=\"" << rec.credential() << "\""
                 << " from=" << rec.validFrom
                 << " to=" << rec.validTo
                 << " remaining=" << rec.remaining;
@@ -269,12 +274,12 @@ static bool readSeedId(JsonObjectConst data, const char* primary, const char* al
     return readUint32(data, alias, out);
 }
 
-static bool seedRecordFromJson(JsonObjectConst data, PinRecord& rec, std::string& key)
+static bool seedRecordFromJson(JsonObjectConst data, CredRecord& rec, std::string& key)
 {
     rec = {};
-    if (!readSeedId(data, "pinId", "id", rec.pinId)) {
-        if (!parseUint32Value(data["key"], rec.pinId)) {
-            std::cout << "[SEED:ERROR] record missing pinId/id/key\n";
+    if (!readSeedId(data, "credId", "id", rec.credId) && !readUint32(data, "pinId", rec.credId)) {
+        if (!parseUint32Value(data["key"], rec.credId)) {
+            std::cout << "[SEED:ERROR] record missing credId/id/key\n";
             return false;
         }
     }
@@ -296,7 +301,7 @@ static bool seedRecordFromJson(JsonObjectConst data, PinRecord& rec, std::string
     if (data["key"].is<const char*>()) {
         key = data["key"].as<const char*>();
     } else {
-        key = formatPinKey(rec.pinId);
+        key = formatCredKey(rec.credId);
     }
     return true;
 }
@@ -339,7 +344,7 @@ static bool loadPreferencesSeed(const char* path)
             continue;
         }
 
-        PinRecord rec = {};
+        CredRecord rec = {};
         std::string key;
         if (!seedRecordFromJson(item.as<JsonObjectConst>(), rec, key)) {
             continue;
@@ -353,132 +358,20 @@ static bool loadPreferencesSeed(const char* path)
     return true;
 }
 
-static bool buildSaveRecord(JsonObjectConst data, CacheRecord& rec)
-{
-    rec = {};
-    readUint32(data, "pinid", rec.pinId);
-
-    if (!copyStringField(data, "pinname", rec.name, sizeof(rec.name))) {
-        std::cout << "[ERROR] save: missing pinname\n";
-        return false;
-    }
-
-    if (!copyStringField(data, "pin", rec.pin, sizeof(rec.pin))) {
-        std::cout << "[ERROR] save: missing pin\n";
-        return false;
-    }
-
-    rec.validFrom = readUint64Or(data, "datefrom", DATE_FROM_UNLIMITED);
-    rec.validTo = readUint64Or(data, "dateto", DATE_TO_UNLIMITED);
-    rec.remaining = readInt32Or(data, "amount", -1);
-
-    uint32_t doorNum = 1;
-    if (!readUint32(data, "doornum", doorNum)) {
-        doorNum = 1;
-    }
-    if (doorNum == 0 || doorNum > 254) {
-        std::cout << "[ERROR] save: invalid doornum=" << doorNum << "\n";
-        return false;
-    }
-    rec.doorNum = static_cast<uint8_t>(doorNum);
-    return true;
-}
-
-static void handleSave(JsonObjectConst data)
-{
-    CacheRecord rec = {};
-    if (!buildSaveRecord(data, rec)) {
-        return;
-    }
-
-    if (rec.pinId != 0) {
-        bool updated = pinStorage.updatePin(rec);
-        std::cout << (updated ? "[OK] updated pin " : "[ERROR] update failed for pin ")
-                  << rec.pinId << "\n";
-        return;
-    }
-
-    uint32_t newId = pinStorage.addPin(rec);
-    if (newId != 0) {
-        std::cout << "[OK] added pin " << newId << "\n";
-    } else {
-        std::cout << "[ERROR] add failed\n";
-    }
-}
-
-static void handleDelete(JsonObjectConst data)
-{
-    CacheRecord rec = {};
-    if (!readUint32(data, "pinid", rec.pinId) || rec.pinId == 0) {
-        std::cout << "[ERROR] delete: missing pinid\n";
-        return;
-    }
-    if (!copyStringField(data, "pinname", rec.name, sizeof(rec.name))) {
-        std::cout << "[ERROR] delete: missing pinname\n";
-        return;
-    }
-    if (!copyStringField(data, "pin", rec.pin, sizeof(rec.pin))) {
-        std::cout << "[ERROR] delete: missing pin; PinStorage::removePin verifies name and pin\n";
-        return;
-    }
-
-    uint32_t deleted = pinStorage.removePin(rec);
-    if (deleted == rec.pinId) {
-        std::cout << "[OK] deleted pin " << deleted << "\n";
-    } else {
-        std::cout << "[ERROR] delete failed for pin " << rec.pinId << "\n";
-    }
-}
-
-static void handleUse(JsonObjectConst data)
-{
-    char pin[MAX_PIN_LENGTH + 1] = {};
-    if (!copyStringField(data, "pin", pin, sizeof(pin))) {
-        std::cout << "[ERROR] use: missing pin\n";
-        return;
-    }
-    uint8_t doorNum = pinStorage.verifyPin(pin);
-    std::cout << "[USE] pin=\"" << pin << "\" door=" << static_cast<unsigned>(doorNum) << "\n";
-}
-
-static bool isCommand(const char* command, const char* symbolic, const char* wire)
-{
-    if (command == nullptr || command[0] == '\0') {
-        return false;
-    }
-    return std::strcmp(command, symbolic) == 0 || std::strcmp(command, wire) == 0;
-}
-
 static void applyMessage(JsonObjectConst root)
 {
     const char* command = root["_command_"] | "";
-    JsonObjectConst data = root["data"].is<JsonObjectConst>()
-        ? root["data"].as<JsonObjectConst>()
-        : root;
-
-    const char* clicked = data["clicked"] | PIN_SAVE_BEACON;
-    if (isCommand(command, "COMM_GET_PINS", COMM_GET_PINS)) {
-        std::cout << "[OK] get pins\n";
+    JsonObjectConst data = root["data"].as<JsonObjectConst>();
+    JsonDocument response;
+    if (std::strcmp(command, COMM_GET_CREDS) == 0) buildCredResponse(credStorage, data, response);
+    else if (std::strcmp(command, COMM_SET_CRED) == 0) applyCredChange(credStorage, data, response);
+    else {
+        std::cout << "[ERROR] unknown command\n";
         return;
     }
-
-    if (isCommand(command, "USE_PIN", "use_pin")) {
-        handleUse(data);
-        return;
-    }
-
-    if (!isCommand(command, "COMM_SET_PIN", COMM_SET_PIN) && command[0] != '\0') {
-        std::cout << "[ERROR] unknown command: " << command << "\n";
-        return;
-    }
-
-    if (std::strcmp(clicked, PIN_DELETE_BEACON) == 0) {
-        handleDelete(data);
-    } else if (std::strcmp(clicked, PIN_SAVE_BEACON) == 0) {
-        handleSave(data);
-    } else {
-        std::cout << "[ERROR] unknown clicked action: " << clicked << "\n";
-    }
+    std::string json;
+    serializeJson(response, json);
+    std::cout << "[c_setcred] " << json << "\n";
 }
 
 int main(int argc, char** argv)
@@ -490,12 +383,12 @@ int main(int argc, char** argv)
         return 1;
     }
     if (seedPath != nullptr) {
-        std::cout << "\n[BOOT] Raw Preferences before PinStorage::begin()\n";
+        std::cout << "\n[BOOT] Raw Preferences before CredStorage::begin()\n";
         dumpPreferences();
     }
 
-    pinStorage.begin();
-    std::cout << "\n[BOOT] After PinStorage::begin()\n";
+    credStorage.begin();
+    std::cout << "\n[BOOT] After CredStorage::begin()\n";
     dumpAll();
 
     std::cout
@@ -503,9 +396,7 @@ int main(int argc, char** argv)
         << "Usage: run_pass_store_console.cmd [optional-seed-json]\n"
         << "Input: one JSON object per line, q to quit.\n"
         << "Seed format: array, pins array, records array, or preferences.pins array.\n"
-        << "Examples:\n"
-        << "{\"clicked\":\"savebutton\",\"pinname\":\"demo\",\"pin\":\"123456\",\"doornum\":\"1\",\"amount\":-1}\n"
-        << "{\"clicked\":\"deletebutton\",\"pinid\":1,\"pinname\":\"demo\",\"pin\":\"123456\"}\n\n";
+        << "Commands: get_creds and set_cred with a data object; see test/cred_protocol.md.\n";
 
     std::string line;
     while (std::getline(std::cin, line)) {

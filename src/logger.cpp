@@ -1,6 +1,8 @@
 #include "logger.h"
+#include "timeout.h"
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 
 
 #ifdef DISP_OLED
@@ -15,16 +17,17 @@ void BufferedLogTransport::begin(){
     head = 0;
     count = 0;
     dropped = 0;
-    nextReconnectMillis = 0;
+    reconnectStarted = false;
 }
 
 void BufferedLogTransport::update(unsigned long currentMillis){
     if (!hasPendingOutput()) {
         return;
     }
-    if (!isConnected() && currentMillis >= nextReconnectMillis) {
+    if (!isConnected() && (!reconnectStarted || timeoutElapsed(reconnectStartedAt, LOG_RECONNECT_INTERVAL, currentMillis))) {
         reconnect(currentMillis);
-        nextReconnectMillis = currentMillis + LOG_RECONNECT_INTERVAL;
+        reconnectStartedAt = currentMillis;
+        reconnectStarted = true;
     }
     if (isConnected()) {
         flushQueue();
@@ -121,7 +124,7 @@ bool BufferedLogTransport::sendDroppedNotice(){
     snprintf(notice.message, sizeof(notice.message),
              "Dropped %lu log message(s) while remote logging was unavailable",
              static_cast<unsigned long>(dropped));
-    notice.timestamp = millis();
+    notice.timestamp = static_cast<unsigned long>(time(nullptr));
     if (!sendNow(notice)) {
         return false;
     }
@@ -182,7 +185,7 @@ void Logger::logPrint(uint8_t severity, const char* message, const char* source,
         logArea,
         source,
         message,
-        millis()
+        static_cast<unsigned long>(time(nullptr))
     };
     writeSerial(record);
     writeRemote(record);

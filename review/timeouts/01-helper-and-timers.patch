@@ -1,0 +1,153 @@
+--- /dev/null
++++ b/include/timeout.h
+@@ -0,0 +1,22 @@
++#pragma once
++#include <Arduino.h>
++#include <stdint.h>
++
++// Millisecond timestamps use the ESP32's 32-bit unsigned counter, also in host tests.
++// Check active timeouts regularly: elapsed time must be less than one full wrap
++// (about 49.7 days). Zero is a valid start time, never an inactive marker.
++inline bool timeoutElapsed(uint32_t timeoutStart, uint32_t timeoutLength, uint32_t now)
++{
++    return static_cast<uint32_t>(now - timeoutStart) >= timeoutLength;
++}
++
++inline bool timeoutElapsed(uint32_t timeoutStart, uint32_t timeoutLength)
++{
++    return timeoutElapsed(timeoutStart, timeoutLength, static_cast<uint32_t>(millis()));
++}
++
++inline uint32_t timeoutRemaining(uint32_t timeoutStart, uint32_t timeoutLength, uint32_t now)
++{
++    const uint32_t elapsed = static_cast<uint32_t>(now - timeoutStart);
++    return elapsed >= timeoutLength ? 0 : timeoutLength - elapsed;
++}
+--- a/include/timer.h
++++ b/include/timer.h
+@@ -22,7 +22,7 @@
+ 
+ struct Timer {
+   bool active;
+-  unsigned long dueTime;
++  uint32_t startedAt;
+   unsigned long interval;
+   bool repeat;
+   uint8_t action;
+@@ -43,15 +43,14 @@
+   bool cancel(int timerId);
+ 
+   // Update timers (call this in loop())
+-  void update(unsigned long now = 0);
++  void update() { update(millis()); }
++  void update(unsigned long now);
+ 
+   // Initialize the timer manager (necessary to set actionHandler callback)
+   void initializeTimerManager(void (*actionHandler)(uint8_t action, const char* arg) = nullptr);
+ 
+ private:
+   Timer timers[MAX_TIMERS];
+-  unsigned long firstTimer = 0;
+-  uint8_t firstTimerIdx = 0;
+   void (*actionHandler)(uint8_t action, const char* arg) = nullptr;
+ 
+   int findFreeSlot();
+--- a/src/timer.cpp
++++ b/src/timer.cpp
+@@ -1,9 +1,10 @@
+ #include "timer.h"
++#include "timeout.h"
+ 
+ TimerManager::TimerManager() {
+   for (int i = 0; i < MAX_TIMERS; ++i) {
+     timers[i].active = false;
+-    timers[i].dueTime = 0;
++    timers[i].startedAt = 0;
+     timers[i].interval = 0;
+     timers[i].repeat = false;
+     timers[i].action = 0;
+@@ -27,7 +28,7 @@
+   }
+ 
+   timers[slot].active = true;
+-  timers[slot].dueTime = millis() + delayMs;
++  timers[slot].startedAt = millis();
+   timers[slot].interval = delayMs;
+   timers[slot].repeat = false;
+   timers[slot].action = action;
+@@ -35,10 +36,6 @@
+     strcpy(timers[slot].arg, arg);
+   } else {
+     timers[slot].arg[0] = '\0';
+-  }
+-  if (firstTimer == 0 || timers[slot].dueTime < firstTimer) {
+-    firstTimer = timers[slot].dueTime;
+-    firstTimerIdx = slot;
+   }
+   return slot;
+ }
+@@ -50,7 +47,7 @@
+   }
+ 
+   timers[slot].active = true;
+-  timers[slot].dueTime = millis() + intervalMs;
++  timers[slot].startedAt = millis();
+   timers[slot].interval = intervalMs;
+   timers[slot].repeat = true;
+   if (arg != NULL) {
+@@ -59,10 +56,6 @@
+     timers[slot].arg[0] = '\0';
+   }
+   timers[slot].action = action;
+-  if (firstTimer == 0 || timers[slot].dueTime < firstTimer) {
+-    firstTimer = timers[slot].dueTime;
+-    firstTimerIdx = slot;
+-  }
+   return slot;
+ }
+ 
+@@ -81,41 +74,22 @@
+ 
+ // Call this in your main loop to check and execute timers
+ void TimerManager::update(unsigned long now) {
+-  if (now == 0) {
+-    now = millis();
+-  }
+-
+-  if (firstTimer == 0) {
+-    return; // No active timers
+-  }
+-
+-  if ((long)(now - firstTimer) < 0) {
+-    return; // No timers are due yet
+-  }
+-
+-  firstTimer = 0;
+-
+   for (int i = 0; i < MAX_TIMERS; ++i) {
+     if (!timers[i].active) {
+       continue;
+     }
+ 
+-    if ((long)(now - timers[i].dueTime) >= 0)  {
++    if (timeoutElapsed(timers[i].startedAt, timers[i].interval, now))  {
+       if (actionHandler != nullptr) {
+         actionHandler(timers[i].action, timers[i].arg);
+       }
+ 
+       if (timers[i].repeat) {
+-        timers[i].dueTime = now + timers[i].interval;
++        timers[i].startedAt = now;
+       } else {
+         timers[i].active = false;
+         continue;
+-      } 
+-    }
+-
+-    if (firstTimer == 0 || (long)(timers[i].dueTime - firstTimer) < 0) {
+-      firstTimer = timers[i].dueTime;
+-      firstTimerIdx = i;
++      }
+     }
+   }
+ }

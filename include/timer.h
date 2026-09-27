@@ -22,7 +22,7 @@
 
 struct Timer {
   bool active;
-  unsigned long dueTime;
+  uint32_t startedAt;
   unsigned long interval;
   bool repeat;
   uint8_t action;
@@ -43,15 +43,14 @@ public:
   bool cancel(int timerId);
 
   // Update timers (call this in loop())
-  void update(unsigned long now = 0);
+  void update() { update(millis()); }
+  void update(unsigned long now);
 
   // Initialize the timer manager (necessary to set actionHandler callback)
   void initializeTimerManager(void (*actionHandler)(uint8_t action, const char* arg) = nullptr);
 
 private:
   Timer timers[MAX_TIMERS];
-  unsigned long firstTimer = 0;
-  uint8_t firstTimerIdx = 0;
   void (*actionHandler)(uint8_t action, const char* arg) = nullptr;
 
   int findFreeSlot();

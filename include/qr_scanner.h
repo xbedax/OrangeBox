@@ -96,8 +96,10 @@ private:
   size_t lastFrameLen = 0;
   QrScannerEventType pendingEvent = QrScannerEventType::None;
 
-  unsigned long responseDeadline = 0;
-  unsigned long scanDeadline = 0;
+  uint32_t responseStartedAt = 0;
+  uint32_t responseTimeoutMs = 0;
+  uint32_t scanStartedAt = 0;
+  uint32_t scanTimeoutMs = 0;
 
   void activateHardware(const uint8_t* commandOverride, size_t commandLength);
   void deactivateHardware(const uint8_t* commandOverride, size_t commandLength);

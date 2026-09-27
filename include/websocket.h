@@ -93,7 +93,8 @@ class WebSocketManager {
     AsyncWebSocket* ws;                                                         // WebSocket server instance
     std::list<CommandEntry> commandHandlers;                                    // List of registered command handlers
     AsyncWebServer* server;                                                     // Pointer to the AsyncWebServer instance
-    unsigned long nextWatchdogFeedTime;                                         // Next time to send a ping request to clients for watchdog purposes
+    unsigned long watchdogFeedStartedAt = 0;
+    bool watchdogFeedStarted = false;                                         // Whether a ping has been sent to clients for watchdog purposes
     const unsigned long watchdogFeedInterval = WATCHDOG_INTERVAL;               // Feed watchdog every 10 seconds
     const unsigned long watchdogTimeout = WATCHDOG_TIMEOUT;                     // Consider client disconnected if no pong received in 30 seconds
 

@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "timeout.h"
 #include <HardwareSerial.h>
 #include <cstring>
 
@@ -551,8 +552,8 @@ void setup()
 {
   Serial.begin(QR_SCANNER_STUB_CONSOLE_BAUD);
 #if ARDUINO_USB_CDC_ON_BOOT
-  unsigned long serialWaitUntil = millis() + 3000;
-  while (!Serial && static_cast<long>(millis() - serialWaitUntil) < 0) {
+  unsigned long serialWaitStartedAt = millis();
+  while (!Serial && !timeoutElapsed(serialWaitStartedAt, 3000)) {
     delay(10);
   }
 #endif

@@ -1,6 +1,7 @@
 // WebSocket config — adjust URL to your server
 //const WS_URL = "wss://box.inforoom.cz";
 var WS_URL = "wss://" + location.hostname + "/";
+//WS_URL = "ws://127.0.0.1:8080";
 let ws = null;
 var lastContact = 0;
 var connectionState = 0;      //0 - disconnected, 1 - unknown, 2 - connected
@@ -22,7 +23,7 @@ const getWebSocket = () => {
     return ws;
   }
   ws = new WebSocket(WS_URL);
-  ws.addEventListener("open",  () => {console.log("WS connected"); lastContact =  Date.now(); connectionState = 2;});
+  ws.addEventListener("open",  () => {console.log("WS connected"); lastContact =  Date.now()/1000; connectionState = 2;});
   ws.addEventListener("error", (e) => {console.error("WS error", e); connectionState = 1;});
   ws.addEventListener("close", () => {console.log("WS closed"); connectionState = 0;});
   ws.addEventListener("message", (data) => onMessage(data)); // <-- add this line
@@ -38,7 +39,7 @@ const postFormData = (formData, mycommand, myscope) => {
   const socket = getWebSocket();
   const payload = JSON.stringify({
 //    type: "formSubmit",
-    _timestamp_: Date.now(),
+    _timestamp_: Date.now()/1000,
     _command_:mycommand,
     _scope_:myscope,
     data: formData,
@@ -58,58 +59,26 @@ function onMessage(event) {
   
   console.log('Received');
   console.log(event.data);
-  lastContact = Date.now();
+  lastContact = Date.now()/1000;
   
   var myObj = JSON.parse(event.data);
+  var command = myObj["_command_"];
   if (myObj['_timestamp_'] > 0){
-    driftPool[driftPtr]  =  (myObj['_timestamp_']/1000 - lastContact);
+    driftPool[driftPtr]  =  (myObj['_timestamp_'] - lastContact);
 	driftPtr++;
 	if (driftPtr <= driftPoolLength) {
 		driftPtr = 0;
 	}
   }
-  
-  var command = myObj["_command_"];
-  var keys = Object.keys(myObj["data"]);
   console.log("Command: " + command + " / " + lastContact + " // " + cumulatedDrift + " /-/ " + boxClockDrift + "( " + messagesReceived + ")");
   if (command == "_ping_") {
     const data = {};  
     data["pongdata"] = "some_data";
     postFormData(data, "_pong_"); 
+  } else {
+	handleMessage (myObj);
   }
-  if ( command == "c_visibility") {
-    for (var i = 0; i < keys.length; i++){
-      var key = keys[i];
-      console.log("Visibility for key: " + key);
-      if ( myObj["data"][key] == 'no') {
-        document.getElementById(key).hidden = true;
-      }else{
-        document.getElementById(key).hidden = false;
-      }  
-    }
-  }
-  if ( command == "c_enordis") {
-    for (var i = 0; i < keys.length; i++){
-      var key = keys[i];
-	  if ( myObj["data"][key] == 'disable') {
-		console.log("Disabling key: " + key);
-        document.getElementById(key).disabled = true;
-      }else{
-		console.log("Enabling key: " + key);
-        document.getElementById(key).disabled = false;
-      }  
-    }
-  }
-
-  if ( command == "c_content") {
-    for (var i = 0; i < keys.length; i++){
-      var key = keys[i];
-      console.log("Changing key: " + key);
-      document.getElementById(key).innerHTML = "";
-      document.getElementById(key).innerHTML = myObj["data"][key];
-
-    }
-  }
+  
 //    document.getElementById(key).value = myObj["data"][key];
   
 }

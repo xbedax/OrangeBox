@@ -29,7 +29,8 @@ struct DiagnosticMetric {
 };
 
 struct DiagnosticSnapshot {
-    unsigned long timestampMillis;
+    unsigned long timestampMillis; // uptime at capture, used only for the uptime_ms metric
+    time_t timestampEpoch;         // wall-clock time at capture, from time(nullptr)
     uint8_t metricCount;
     DiagnosticMetric metrics[DIAGNOSTICS_MAX_METRICS];
 };

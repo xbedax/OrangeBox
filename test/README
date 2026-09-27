@@ -28,10 +28,10 @@ Pass store console
 ------------------
 
 `run_pass_store_console.cmd` builds a small native console wrapper around the
-real `PinStorage` implementation and the test `Preferences` stub.
+real `CredStorage` implementation and the test `Preferences` stub.
 
 It can optionally preload the simulated `pins` Preferences namespace from a
-JSON seed before calling `PinStorage::begin()`:
+JSON seed before calling `CredStorage::begin()`:
 
 `run_pass_store_console.cmd test\pass_store_seed_ok.json`
 
@@ -49,20 +49,14 @@ pool.
 `run_pass_store_console.cmd test\pass_store_seed_interrupted_delete.json`
 
 Seed files may be a JSON array, or an object with `pins`, `records`, or
-`preferences.pins`. Each record maps to `PinRecord`; use `pinId`/`id`,
+`preferences.pins`. Each record maps to `CredRecord`; use `credId`/`pinId`/`id`,
 `prevId`/`prev`, `nextId`/`next`, `doorNum`/`door`, `name`, `pin`,
-`validFrom`/`from`, `validTo`/`to`, and `remaining`/`amount`. `pinId`, `prev`,
+`validFrom`/`from`, `validTo`/`to`, and `remaining`/`amount`. `credId`, `prev`,
 and `next` also accept `FIRST`, `LAST`, decimal strings, and 8-digit hex keys.
 
-Runtime input is one JSON object per line. The wrapper accepts either the
-websocket-like shape with `_command_` and `data`, or the data object directly:
-
-`{"clicked":"savebutton","pinname":"demo","pin":"123456","doornum":"1","amount":-1}`
-
-`{"clicked":"deletebutton","pinid":1,"pinname":"demo","pin":"123456"}`
-
-After each action it dumps the active cache and the raw `pins` Preferences
-records, including HEAD/TAIL links.
+Runtime input uses the production get_creds / set_cred handlers. See
+`cred_protocol.md` for the message schema, examples and regression tests.
+After each action the console dumps the active cache and raw NVS records.
 
 QR scanner UART stub
 --------------------

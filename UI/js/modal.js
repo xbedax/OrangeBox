@@ -12,6 +12,12 @@ const closingClass = "modal-is-closing";
 const animationDuration = 400; // ms
 let visibleModal = null;
 
+// Keep wire dates separate from the empty value used by native date pickers.
+const credDateBounds = Object.freeze({
+  datefrom: '0001-01-01', codefrom: '0001-01-01',
+  dateto: '9999-12-31', codeto: '9999-12-31'
+});
+
 const toggleModal = (targetId, rowData = null) => {
 
     console.log("ToggleModal invoked on " + targetId);
@@ -24,7 +30,7 @@ const toggleModal = (targetId, rowData = null) => {
 
 // Toggle modal — submit variant: collect form then close
 const submitModal = (event) => {
-  const clickedElement = event.currentTarget.id;
+  const clickedElement = event.currentTarget.dataset.action || event.currentTarget.id;
   event.preventDefault();
   const modal = document.getElementById(event.currentTarget.getAttribute("data-target"));
   if (typeof modal == "undefined" || modal == null) return;
@@ -57,19 +63,42 @@ const openModal = (modal, rowData ) => {
   }, animationDuration);
   modal.setAttribute("open", true);
   const form = modal.querySelector("form");
+  const deleteButton = modal.querySelector('[data-action="deletebutton"]');
   if (rowData == null) {
     form.reset();
-    document.getElementById("pinid").value = "0";
-    document.getElementById("deletebutton").disabled=true;
-    document.getElementById("btnpropose").disabled=false;
-    document.getElementById("pinname").disabled=false;
-    document.getElementById("pinvalue").disabled=false;
+	if(modal.id == "modal-code") {
+		document.getElementById("codeid").value = "0";
+		document.getElementById("codevalue").disabled=false;
+		document.getElementById("codename").disabled=false;
+	}
+	if(modal.id == "modal-pin") {
+		document.getElementById("pinid").value = "0";
+		document.getElementById("pinvalue").disabled=false;
+		document.getElementById("btnpropose").disabled=false;
+		document.getElementById("pinname").disabled=false;
+        form.elements.namedItem("amount").disabled = form.elements.namedItem("checkbox-unlimited").checked;
+	}
+	
+    //document.getElementById("pinid").value = "0";
+    if (deleteButton) deleteButton.disabled = true;
+    //document.getElementById("btnpropose").disabled=false;
+    //document.getElementById("pinname").disabled=false;
+    //document.getElementById("pinvalue").disabled=false;
   } else {
     fillModal(modal, rowData);  
-    document.getElementById("pinname").disabled=true;
-    document.getElementById("pinvalue").disabled=true;  
-    document.getElementById("deletebutton").disabled=false;  
-    document.getElementById("btnpropose").disabled=true;    
+	if(modal.id == "modal-code") {
+		document.getElementById("codevalue").disabled=true;
+		document.getElementById("codename").disabled=true;
+	}
+	if(modal.id == "modal-pin") {
+		document.getElementById("pinvalue").disabled=true;
+		document.getElementById("btnpropose").disabled=true;
+		document.getElementById("pinname").disabled=true;
+	}
+    //document.getElementById("pinname").disabled=true;
+    //document.getElementById("pinvalue").disabled=true;  
+    if (deleteButton) deleteButton.disabled = false;
+    //document.getElementById("btnpropose").disabled=true;    
   }
 };
 
@@ -100,21 +129,17 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-// Fill pin detail modal form 
+// Fill cred detail modal form 
 function fillModal(targetModal, fdata) {
-//  var fkeys = Object.keys(fdata);
-  for (var key in  fdata){
-        console.log("Filling key: " + key + "=" + fdata[key]);
-//      let tmodal = document.getElementById(targetModal);
-      document .getElementById(key).value = fdata[key];
+  const form = targetModal.querySelector("form");
+  for (const [key, value] of Object.entries(fdata)) {
+    const field = form.elements.namedItem(key);
+    if (field) field.value = credDateBounds[key] === value ? '' : value;
   }
-  
-  if(fdata["amount"] == "-1") {
-    document .getElementById("amount").disabled=true;
-    document .getElementById("checkbox-unlimited").checked=true;
-  }else{
-    document .getElementById("checkbox-unlimited").checked=false;
-    document .getElementById("amount").disabled=false;
+  if (targetModal.id === "modal-pin") {
+    const unlimited = String(fdata.amount) === "-1";
+    form.elements.namedItem("amount").disabled = unlimited;
+    form.elements.namedItem("checkbox-unlimited").checked = unlimited;
   }
 }
 
@@ -162,6 +187,8 @@ const collectForm = (modal) => {
       data[key] = el.checked;
     } else if (el.type === "select-multiple") {
       data[key] = Array.from(el.selectedOptions).map((o) => o.value);
+    } else if (Object.hasOwn(credDateBounds, key)) {
+      data[key] = el.value || credDateBounds[key];
     } else {
       data[key] = el.value;
     }

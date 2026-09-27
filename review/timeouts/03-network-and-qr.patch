@@ -1,0 +1,336 @@
+--- a/include/logger.h
++++ b/include/logger.h
+@@ -83,7 +83,8 @@
+     uint16_t head = 0;
+     uint16_t count = 0;
+     uint32_t dropped = 0;
+-    unsigned long nextReconnectMillis = 0;
++    unsigned long reconnectStartedAt = 0;
++    bool reconnectStarted = false;
+ 
+     QueuedLogRecord makeQueuedRecord(const LogRecord& record) const;
+     void queuePush(const LogRecord& record);
+--- a/src/logger.cpp
++++ b/src/logger.cpp
+@@ -1,4 +1,5 @@
+ #include "logger.h"
++#include "timeout.h"
+ #include <cstdio>
+ #include <cstring>
+ #include <ctime>
+@@ -16,16 +17,17 @@
+     head = 0;
+     count = 0;
+     dropped = 0;
+-    nextReconnectMillis = 0;
++    reconnectStarted = false;
+ }
+ 
+ void BufferedLogTransport::update(unsigned long currentMillis){
+     if (!hasPendingOutput()) {
+         return;
+     }
+-    if (!isConnected() && currentMillis >= nextReconnectMillis) {
++    if (!isConnected() && (!reconnectStarted || timeoutElapsed(reconnectStartedAt, LOG_RECONNECT_INTERVAL, currentMillis))) {
+         reconnect(currentMillis);
+-        nextReconnectMillis = currentMillis + LOG_RECONNECT_INTERVAL;
++        reconnectStartedAt = currentMillis;
++        reconnectStarted = true;
+     }
+     if (isConnected()) {
+         flushQueue();
+--- a/include/websocket.h
++++ b/include/websocket.h
+@@ -93,7 +93,8 @@
+     AsyncWebSocket* ws;                                                         // WebSocket server instance
+     std::list<CommandEntry> commandHandlers;                                    // List of registered command handlers
+     AsyncWebServer* server;                                                     // Pointer to the AsyncWebServer instance
+-    unsigned long nextWatchdogFeedTime;                                         // Next time to send a ping request to clients for watchdog purposes
++    unsigned long watchdogFeedStartedAt = 0;
++    bool watchdogFeedStarted = false;                                         // Whether a ping has been sent to clients for watchdog purposes
+     const unsigned long watchdogFeedInterval = WATCHDOG_INTERVAL;               // Feed watchdog every 10 seconds
+     const unsigned long watchdogTimeout = WATCHDOG_TIMEOUT;                     // Consider client disconnected if no pong received in 30 seconds
+ 
+--- a/src/websocket.cpp
++++ b/src/websocket.cpp
+@@ -1,4 +1,5 @@
+ #include "websocket.h"
++#include "timeout.h"
+ #include <ArduinoJson.h>
+ #include <AsyncTCP.h>
+ #include <ESPAsyncWebServer.h>
+@@ -111,8 +112,9 @@
+ }
+ 
+ void WebSocketManager::update(unsigned long currentMillis) {
+-  if (currentMillis > nextWatchdogFeedTime) {
+-    nextWatchdogFeedTime = currentMillis + watchdogFeedInterval;
++  if (!watchdogFeedStarted || timeoutElapsed(watchdogFeedStartedAt, watchdogFeedInterval, currentMillis)) {
++    watchdogFeedStartedAt = currentMillis;
++    watchdogFeedStarted = true;
+     watchdogSendRequest();
+     cleanupConnections();
+ 
+--- a/include/vpn_manager.h
++++ b/include/vpn_manager.h
+@@ -144,7 +144,8 @@
+     bool configured = false;
+     bool initialized = false;
+     volatile VPNConnectionState state = VPNConnectionState::Unconfigured;
+-    uint32_t nextConnectAttemptMs = 0;
++    uint32_t reconnectStartedAt = 0;
++    uint32_t reconnectDelayMs = 0;
+     volatile int boundPort = 0;
+     QueueHandle_t commandQueue = nullptr;
+     TaskHandle_t workerTask = nullptr;
+--- a/src/vpn_manager.cpp
++++ b/src/vpn_manager.cpp
+@@ -1,4 +1,5 @@
+ #include "vpn_manager.h"
++#include "timeout.h"
+ 
+ #if __has_include(<ESP-Reverse_Tunneling_Libssh2.h>)
+ #include <ESP-Reverse_Tunneling_Libssh2.h>
+@@ -32,10 +33,6 @@
+     return port != 0;
+ }
+ 
+-bool timeReached(uint32_t now, uint32_t timestamp)
+-{
+-    return timestamp == 0 || static_cast<int32_t>(now - timestamp) >= 0;
+-}
+ }
+ 
+ VPNManager::VPNManager()
+@@ -98,7 +95,7 @@
+     }
+     if (tunnel->isConnected()) {
+         state = VPNConnectionState::Connected;
+-        nextConnectAttemptMs = 0;
++        reconnectDelayMs = 0;
+         return true;
+     }
+     if (!initialized) {
+@@ -112,7 +109,7 @@
+     state = VPNConnectionState::Connecting;
+     if (tunnel->connectSSH()) {
+         state = VPNConnectionState::Connected;
+-        nextConnectAttemptMs = 0;
++        reconnectDelayMs = 0;
+         return true;
+     }
+ 
+@@ -153,7 +150,7 @@
+     }
+ #endif
+     state = configured ? VPNConnectionState::Disconnected : VPNConnectionState::Unconfigured;
+-    nextConnectAttemptMs = 0;
++    reconnectDelayMs = 0;
+     boundPort = 0;
+ }
+ 
+@@ -250,15 +247,15 @@
+ 
+ uint32_t VPNManager::getNextReconnectDelayMs() const
+ {
+-    if (nextConnectAttemptMs == 0) {
++    if (reconnectDelayMs == 0) {
+         return 0;
+     }
+ 
+     uint32_t now = millis();
+-    if (timeReached(now, nextConnectAttemptMs)) {
++    if (timeoutElapsed(reconnectStartedAt, reconnectDelayMs, now)) {
+         return 0;
+     }
+-    return nextConnectAttemptMs - now;
++    return timeoutRemaining(reconnectStartedAt, reconnectDelayMs, now);
+ }
+ 
+ bool VPNManager::hasBackend() const
+@@ -302,7 +299,7 @@
+ 
+ bool VPNManager::canAttemptConnect(uint32_t now) const
+ {
+-    return timeReached(now, nextConnectAttemptMs);
++    return timeoutElapsed(reconnectStartedAt, reconnectDelayMs, now);
+ }
+ 
+ bool VPNManager::backendLastFailureWasStaleListener() const
+@@ -318,7 +315,8 @@
+ void VPNManager::scheduleReconnect(VPNConnectionState failureState, uint32_t delayMs)
+ {
+     state = failureState;
+-    nextConnectAttemptMs = millis() + delayMs;
++    reconnectStartedAt = millis();
++    reconnectDelayMs = delayMs;
+ }
+ 
+ bool VPNManager::applyConfig(const VPNConfig& vpnConfig)
+@@ -411,7 +409,7 @@
+             disconnectInternal();
+             config = command.config;
+             initialized = false;
+-            nextConnectAttemptMs = 0;
++            reconnectDelayMs = 0;
+             configured = applyConfig(config);
+             state = configured ? VPNConnectionState::Disconnected
+                                : VPNConnectionState::ConfigInvalid;
+--- a/include/qr_scanner.h
++++ b/include/qr_scanner.h
+@@ -96,8 +96,10 @@
+   size_t lastFrameLen = 0;
+   QrScannerEventType pendingEvent = QrScannerEventType::None;
+ 
+-  unsigned long responseDeadline = 0;
+-  unsigned long scanDeadline = 0;
++  uint32_t responseStartedAt = 0;
++  uint32_t responseTimeoutMs = 0;
++  uint32_t scanStartedAt = 0;
++  uint32_t scanTimeoutMs = 0;
+ 
+   void activateHardware(const uint8_t* commandOverride, size_t commandLength);
+   void deactivateHardware(const uint8_t* commandOverride, size_t commandLength);
+--- a/src/qr_scanner.cpp
++++ b/src/qr_scanner.cpp
+@@ -1,4 +1,5 @@
+ #include "qr_scanner.h"
++#include "timeout.h"
+ 
+ QrScanner::QrScanner()
+ {
+@@ -10,8 +11,8 @@
+   config = scannerConfig;
+   currentState = QrScannerState::Idle;
+   scanActive = false;
+-  responseDeadline = 0;
+-  scanDeadline = 0;
++  responseStartedAt = 0;
++  scanTimeoutMs = 0;
+   pendingEvent = QrScannerEventType::None;
+   resetReceiver();
+ 
+@@ -55,10 +56,10 @@
+ 
+   scanActive = true;
+   unsigned long now = millis();
+-  scanDeadline = timeoutMs == 0 ? 0 : now + timeoutMs;
+-  responseDeadline = config.activationResponseWindowMs == 0
+-                       ? now
+-                       : now + config.activationResponseWindowMs;
++  scanStartedAt = now;
++  scanTimeoutMs = timeoutMs;
++  responseStartedAt = now;
++  responseTimeoutMs = config.activationResponseWindowMs;
+   currentState = config.activationResponseWindowMs == 0
+                    ? QrScannerState::WaitingCode
+                    : QrScannerState::WaitingActivationResponse;
+@@ -89,7 +90,8 @@
+   if (responseWindowMs == 0) {
+     responseWindowMs = config.commandResponseWindowMs;
+   }
+-  responseDeadline = responseWindowMs == 0 ? now : now + responseWindowMs;
++  responseStartedAt = now;
++  responseTimeoutMs = responseWindowMs;
+   currentState = responseWindowMs == 0 ? QrScannerState::Idle : QrScannerState::WaitingCommandResponse;
+   return true;
+ }
+@@ -114,8 +116,8 @@
+   deactivateHardware(deactivateCommandOverride, commandLength);
+   currentState = QrScannerState::Idle;
+   scanActive = false;
+-  scanDeadline = 0;
+-  responseDeadline = 0;
++  scanTimeoutMs = 0;
++  responseStartedAt = 0;
+   pendingEvent = QrScannerEventType::Deactivated;
+ }
+ 
+@@ -148,23 +150,23 @@
+   }
+ 
+   if (rxFrameLen > 0 && config.frameIdleMs > 0
+-      && static_cast<long>(now - lastByteMillis) >= static_cast<long>(config.frameIdleMs)) {
++      && timeoutElapsed(lastByteMillis, config.frameIdleMs, now)) {
+     return finalizeFrame();
+   }
+ 
+   if (currentState == QrScannerState::WaitingActivationResponse
+-      && static_cast<long>(now - responseDeadline) >= 0) {
++      && timeoutElapsed(responseStartedAt, responseTimeoutMs, now)) {
+     currentState = QrScannerState::WaitingCode;
+   }
+ 
+   if (currentState == QrScannerState::WaitingCommandResponse
+-      && static_cast<long>(now - responseDeadline) >= 0) {
++      && timeoutElapsed(responseStartedAt, responseTimeoutMs, now)) {
+     currentState = scanActive ? QrScannerState::WaitingCode : QrScannerState::Idle;
+     return makeEvent(QrScannerEventType::CommandResponseTimeout);
+   }
+ 
+-  if (scanActive && scanDeadline != 0
+-      && static_cast<long>(now - scanDeadline) >= 0) {
++  if (scanActive && scanTimeoutMs != 0
++      && timeoutElapsed(scanStartedAt, scanTimeoutMs, now)) {
+     deactivateAfterTerminalEvent();
+     return makeEvent(QrScannerEventType::ScanTimeout);
+   }
+@@ -368,6 +370,6 @@
+   deactivateHardware(nullptr, 0);
+   currentState = QrScannerState::Idle;
+   scanActive = false;
+-  scanDeadline = 0;
+-  responseDeadline = 0;
+-}
++  scanTimeoutMs = 0;
++  responseStartedAt = 0;
++}
+--- a/test/qr_scanner_stub.cpp
++++ b/test/qr_scanner_stub.cpp
+@@ -1,4 +1,5 @@
+ #include <Arduino.h>
++#include "timeout.h"
+ #include <HardwareSerial.h>
+ #include <cstring>
+ 
+@@ -551,8 +552,8 @@
+ {
+   Serial.begin(QR_SCANNER_STUB_CONSOLE_BAUD);
+ #if ARDUINO_USB_CDC_ON_BOOT
+-  unsigned long serialWaitUntil = millis() + 3000;
+-  while (!Serial && static_cast<long>(millis() - serialWaitUntil) < 0) {
++  unsigned long serialWaitStartedAt = millis();
++  while (!Serial && !timeoutElapsed(serialWaitStartedAt, 3000)) {
+     delay(10);
+   }
+ #endif
+--- a/test/vpn_reverse_tunnel_stub.cpp
++++ b/test/vpn_reverse_tunnel_stub.cpp
+@@ -1,4 +1,5 @@
+ #include <Arduino.h>
++#include "timeout.h"
+ #include <WebServer.h>
+ #include <WiFi.h>
+ 
+@@ -23,7 +24,8 @@
+ 
+ WebServer helloServer(localHttpPort);
+ char localHost[16] = "127.0.0.1";
+-unsigned long nextStatusMillis = 0;
++unsigned long statusStartedAt = 0;
++bool statusStarted = false;
+ 
+ void setLocalHostFromWiFi()
+ {
+@@ -137,8 +139,9 @@
+     vpnManager.update();
+ 
+     unsigned long now = millis();
+-    if (now >= nextStatusMillis) {
+-        nextStatusMillis = now + 10000;
++    if (!statusStarted || timeoutElapsed(statusStartedAt, 10000, now)) {
++        statusStartedAt = now;
++        statusStarted = true;
+         Serial.printf("VPN_STATE connected=%u state=%s bound=%d\n",
+                       vpnManager.isConnected() ? 1 : 0,
+                       vpnManager.getStateString().c_str(),

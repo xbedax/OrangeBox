@@ -144,7 +144,8 @@ private:
     bool configured = false;
     bool initialized = false;
     volatile VPNConnectionState state = VPNConnectionState::Unconfigured;
-    uint32_t nextConnectAttemptMs = 0;
+    uint32_t reconnectStartedAt = 0;
+    uint32_t reconnectDelayMs = 0;
     volatile int boundPort = 0;
     QueueHandle_t commandQueue = nullptr;
     TaskHandle_t workerTask = nullptr;

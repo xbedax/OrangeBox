@@ -14,7 +14,8 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 
 $sources = @(
     (Join-Path $root "test\pass_store_console.cpp"),
-    (Join-Path $root "src\pass_store.cpp")
+    (Join-Path $root "src\pass_store.cpp"),
+    (Join-Path $root "src\cred_protocol.cpp")
 )
 
 & g++ -std=c++17 -DBOX_SIMULATION "-I$(Join-Path $root 'test\stubs')" "-I$(Join-Path $root 'include')" "-I$arduinoJson" @sources -o $exe

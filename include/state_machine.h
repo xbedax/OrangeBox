@@ -63,16 +63,20 @@ struct BoxEventData {
 struct BoxStateContext {
     BoxState state;
     uint8_t doorToOpen;
-    bool pinVerified;
+    bool credVerified;
     uint8_t badPasswordCount;
-    uint32_t doorOpenTimeout;
-    uint32_t passwordEntryTimeout;
-    uint32_t badPasswordDelayFinish;
-    uint32_t presenceCodeExpiration;
-    uint32_t ambientOffTimeout;
-    uint32_t displayActionMillis;
+    uint32_t doorOpenStartedAt;
+    uint32_t passwordEntryStartedAt;
+    uint32_t badPasswordStartedAt;
+    uint32_t presenceCodeStartedAt;
+    uint32_t ambientOffStartedAt;
+    uint32_t displayRefreshStartedAt;
     uint32_t currentPasswordEntryMillis;     // Total duration of current password entry timeout
     uint32_t currentBadPasswordMillis;      // Total duration of current bad password delay
+    uint32_t doorOpenDuration;
+    bool badPasswordActive;
+    bool presenceCodeActive;
+    bool displayRefreshActive;
     char presenceCode[7];                   // 6 digits + null terminator
 };
 
@@ -87,7 +91,7 @@ struct BoxStateContext {
  * Functions that read state only (not triggering transitions):
  * - handleGetAmbient()
  * - handleGetDoors()
- * - handleGetPins()
+ * - handleGetCreds()
  * - handleCapture()
  * 
  * Functions that modify state:
@@ -116,10 +120,8 @@ public:
     // Getters for state-dependent data (read-only operations)
     uint8_t getDoorToOpen() const;
     const char* getPresenceCode() const;
-    unsigned long getPresenceCodeExpiration() const;
+    bool isPresenceCodeValid() const;
     uint8_t getBadPasswordCount() const;
-    unsigned long getBadPasswordDelayFinish() const;
-    unsigned long getAmbientOffTimeout() const;
     
     // Callback registration for state transition notifications
     typedef void (*StateChangeCallback)(BoxState oldState, BoxState newState, unsigned long currentMillis);

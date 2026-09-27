@@ -17,7 +17,7 @@ const char* fversion = _VERSION_;
 
 BoxDisplay boxDisplay;
 GpioHAL gpioHal;
-PinStorage pinStorage;
+CredStorage credStorage;
 TimerManager timerManager;
 BoxKeyboard boxKeyboard;
 BoxStateMachine boxStateMachine;
@@ -170,7 +170,7 @@ int main()
     boxKeyboard.clearPassword(&keyboardState);
     boxKeyboard.keyboardInit();
 
-    pinStorage.begin();
+    credStorage.begin();
     boxStateMachine.initialize();
     boxStateMachine.setStateChangeCallback(onStateChanged);
 

@@ -2,25 +2,25 @@
 
 #include "pass_store.h"
 
-bool PinStorage::begin()
+bool CredStorage::begin()
 {
     return true;
 }
 
-uint8_t PinStorage::verifyPin(const char* pinValue, PinType pinType)
+uint8_t CredStorage::verifyCred(const char* credValue, CredType credType)
 {
-    if (pinValue == nullptr || pinType != PinType::Password) {
+    if (credValue == nullptr || credType != CredType::Password) {
         return 0;
     }
 
-    if (std::strcmp(pinValue, "1234") == 0 || std::strcmp(pinValue, "123456") == 0) {
+    if (std::strcmp(credValue, "1234") == 0 || std::strcmp(credValue, "123456") == 0) {
         return 1;
     }
 
     return 0;
 }
 
-bool PinStorage::usedPin(uint8_t)
+bool CredStorage::usedCred(uint8_t)
 {
     return true;
 }

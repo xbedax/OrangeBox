@@ -1,4 +1,5 @@
 #include "qr_scanner.h"
+#include "timeout.h"
 
 QrScanner::QrScanner()
 {
@@ -10,8 +11,8 @@ void QrScanner::begin(Stream& serialStream, const QrScannerConfig& scannerConfig
   config = scannerConfig;
   currentState = QrScannerState::Idle;
   scanActive = false;
-  responseDeadline = 0;
-  scanDeadline = 0;
+  responseStartedAt = 0;
+  scanTimeoutMs = 0;
   pendingEvent = QrScannerEventType::None;
   resetReceiver();
 
@@ -55,10 +56,10 @@ bool QrScanner::startScan(const uint8_t* activateCommandOverride, size_t command
 
   scanActive = true;
   unsigned long now = millis();
-  scanDeadline = timeoutMs == 0 ? 0 : now + timeoutMs;
-  responseDeadline = config.activationResponseWindowMs == 0
-                       ? now
-                       : now + config.activationResponseWindowMs;
+  scanStartedAt = now;
+  scanTimeoutMs = timeoutMs;
+  responseStartedAt = now;
+  responseTimeoutMs = config.activationResponseWindowMs;
   currentState = config.activationResponseWindowMs == 0
                    ? QrScannerState::WaitingCode
                    : QrScannerState::WaitingActivationResponse;
@@ -89,7 +90,8 @@ bool QrScanner::sendCommand(const uint8_t* command, size_t commandLength, unsign
   if (responseWindowMs == 0) {
     responseWindowMs = config.commandResponseWindowMs;
   }
-  responseDeadline = responseWindowMs == 0 ? now : now + responseWindowMs;
+  responseStartedAt = now;
+  responseTimeoutMs = responseWindowMs;
   currentState = responseWindowMs == 0 ? QrScannerState::Idle : QrScannerState::WaitingCommandResponse;
   return true;
 }
@@ -114,8 +116,8 @@ void QrScanner::deactivate(const uint8_t* deactivateCommandOverride, size_t comm
   deactivateHardware(deactivateCommandOverride, commandLength);
   currentState = QrScannerState::Idle;
   scanActive = false;
-  scanDeadline = 0;
-  responseDeadline = 0;
+  scanTimeoutMs = 0;
+  responseStartedAt = 0;
   pendingEvent = QrScannerEventType::Deactivated;
 }
 
@@ -148,23 +150,23 @@ QrScannerEvent QrScanner::update(unsigned long now)
   }
 
   if (rxFrameLen > 0 && config.frameIdleMs > 0
-      && static_cast<long>(now - lastByteMillis) >= static_cast<long>(config.frameIdleMs)) {
+      && timeoutElapsed(lastByteMillis, config.frameIdleMs, now)) {
     return finalizeFrame();
   }
 
   if (currentState == QrScannerState::WaitingActivationResponse
-      && static_cast<long>(now - responseDeadline) >= 0) {
+      && timeoutElapsed(responseStartedAt, responseTimeoutMs, now)) {
     currentState = QrScannerState::WaitingCode;
   }
 
   if (currentState == QrScannerState::WaitingCommandResponse
-      && static_cast<long>(now - responseDeadline) >= 0) {
+      && timeoutElapsed(responseStartedAt, responseTimeoutMs, now)) {
     currentState = scanActive ? QrScannerState::WaitingCode : QrScannerState::Idle;
     return makeEvent(QrScannerEventType::CommandResponseTimeout);
   }
 
-  if (scanActive && scanDeadline != 0
-      && static_cast<long>(now - scanDeadline) >= 0) {
+  if (scanActive && scanTimeoutMs != 0
+      && timeoutElapsed(scanStartedAt, scanTimeoutMs, now)) {
     deactivateAfterTerminalEvent();
     return makeEvent(QrScannerEventType::ScanTimeout);
   }
@@ -368,6 +370,6 @@ void QrScanner::deactivateAfterTerminalEvent()
   deactivateHardware(nullptr, 0);
   currentState = QrScannerState::Idle;
   scanActive = false;
-  scanDeadline = 0;
-  responseDeadline = 0;
+  scanTimeoutMs = 0;
+  responseStartedAt = 0;
 }

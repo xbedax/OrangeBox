@@ -1,0 +1,268 @@
+--- /dev/null
++++ b/test/timeout_rollover.cpp
+@@ -0,0 +1,60 @@
++#include <cassert>
++#include <iostream>
++#include "timeout.h"
++#include "timer.h"
++
++static unsigned fired[4] = {};
++static void onTimer(uint8_t action, const char*) { ++fired[action]; }
++
++int main()
++{
++    const uint32_t start = UINT32_MAX - 9;
++    assert(!timeoutElapsed(start, 20, UINT32_MAX));
++    assert(!timeoutElapsed(start, 20, 9));
++    assert(timeoutElapsed(start, 20, 10));
++    assert(timeoutElapsed(start, 20, 11));
++    assert(timeoutRemaining(start, 20, 0) == 10);
++    assert(timeoutRemaining(start, 20, 10) == 0);
++    assert(timeoutRemaining(start, 20, 11) == 0);
++    assert(timeoutElapsed(0, 0, 0));
++    assert(!timeoutElapsed(0, UINT32_MAX, UINT32_MAX - 1));
++    assert(timeoutElapsed(0, UINT32_MAX, UINT32_MAX));
++    testStubMillis = 10;
++    assert(timeoutElapsed(start, 20));
++
++    TimerManager timers;
++    timers.initializeTimerManager(onTimer);
++    testStubMillis = start;
++    timers.scheduleOnce(10, 1); // Deadline is exactly zero.
++    timers.scheduleOnce(5, 2);  // Must run first despite the wrapped deadline above.
++    const int repeated = timers.scheduleRepeat(20, 3);
++    timers.update(UINT32_MAX - 5);
++    assert(fired[1] == 0 && fired[2] == 0 && fired[3] == 0);
++    timers.update(UINT32_MAX - 4);
++    assert(fired[2] == 1 && fired[1] == 0);
++    // Explicit zero must be honored even when millis() returns a different value.
++    timers.update(0);
++    assert(fired[1] == 1 && fired[3] == 0);
++    timers.update(9);
++    assert(fired[3] == 0);
++    timers.update(10);
++    assert(fired[3] == 1);
++    timers.update(29);
++    assert(fired[3] == 1);
++    timers.update(30);
++    assert(fired[3] == 2);
++    assert(timers.cancel(repeated));
++    timers.update(50);
++    assert(fired[3] == 2);
++
++    testStubMillis = 0;
++    timers.scheduleOnce(0, 1);
++    timers.update();
++    assert(fired[1] == 2);
++    const int cancelled = timers.scheduleOnce(10, 2);
++    assert(timers.cancel(cancelled));
++    timers.scheduleOnce(20, 1);
++    timers.update(20);
++    assert(fired[1] == 3 && fired[2] == 1);
++    std::cout << "Timeout and TimerManager rollover tests passed\n";
++}
+--- /dev/null
++++ b/test/state_timeout_rollover.cpp
+@@ -0,0 +1,123 @@
++#include <cassert>
++#include <iostream>
++#include "state_machine.h"
++#include "box_display.h"
++#include "gpio_hal.h"
++#include "pass_store.h"
++#include "logger.h"
++#include "timer.h"
++
++BoxDisplay boxDisplay;
++GpioHAL gpioHal;
++PinStorage pinStorage;
++TimerManager timerManager;
++Logger logger;
++uint8_t PinStorage::verifyPin(const char*, PinType) { return DOOR_UNKNOWN; }
++bool PinStorage::usedPin(uint8_t) { return true; }
++static uint8_t progress;
++static bool ambient;
++static bool openingSucceeds = true;
++void BoxDisplay::setOpenDoorList() {}
++void BoxDisplay::writeStatusLine() {}
++void BoxDisplay::writeInfoLine(uint8_t) {}
++void BoxDisplay::writeActionLine(uint8_t) {}
++void BoxDisplay::writeResponseLine(uint8_t) {}
++void BoxDisplay::setPasswordLength(uint8_t) {}
++void BoxDisplay::setVerifyCode(const char*) {}
++void BoxDisplay::setProgressBar(uint8_t value) { progress = value; }
++uint8_t GpioHAL::readDoorState(uint8_t) { return DOOR_CLOSED; }
++uint8_t GpioHAL::openDoor(uint8_t door) { return openingSucceeds ? door : DOOR_UNKNOWN; }
++uint8_t GpioHAL::ambientOn() { ambient = true; return 1; }
++uint8_t GpioHAL::ambientOff() { ambient = false; return 0; }
++void GpioHAL::getOpenDoors(bool* doors, uint8_t count) { memset(doors, 0, count); }
++void Logger::logPrint(uint8_t, const char*, const char*, uint8_t) {}
++void Logger::logPrint(uint8_t, const String&, const char*, uint8_t) {}
++
++static void event(BoxStateMachine& machine, BoxEventType type, uint8_t door = 1)
++{
++    BoxEventData data = {};
++    data.eventType = type;
++    data.data.doorData.doorNum = door;
++    machine.processEvent(data);
++}
++static void tick(BoxStateMachine& machine, uint32_t now)
++{
++    testStubMillis = now;
++    machine.update(now);
++}
++int main()
++{
++    for (uint32_t start : {uint32_t(0), UINT32_MAX - 999U}) {
++        testStubMillis = start;
++        BoxStateMachine machine;
++        machine.setUIUpdateCallback(nullptr);
++        machine.initialize();
++        assert(!machine.isPresenceCodeValid());
++        event(machine, BoxEventType::KeyboardKey1);
++        const uint32_t passwordDuration = PASS_ENTRY_TIMEOUT * 1000UL;
++        tick(machine, start + passwordDuration / 2);
++        assert(machine.getCurrentState() == BoxState::Password);
++        assert(progress == 50);
++        tick(machine, start + passwordDuration - 1);
++        assert(machine.getCurrentState() == BoxState::Password);
++        tick(machine, start + passwordDuration);
++        assert(machine.getCurrentState() == BoxState::Home);
++
++        testStubMillis = start;
++        machine.initialize();
++        event(machine, BoxEventType::KeyboardKey2);
++        const uint32_t presenceDuration = PRESENCE_CODE_VALIDITY * 1000UL;
++        tick(machine, start + presenceDuration / 2);
++        assert(machine.isPresenceCodeValid() && progress == 50);
++        testStubMillis = uint32_t(start + presenceDuration);
++        assert(!machine.isPresenceCodeValid()); // Web request before the next update.
++        tick(machine, start + presenceDuration);
++        assert(machine.getCurrentState() == BoxState::Home);
++        tick(machine, start); // Expired code must not revive on a later wrap.
++        assert(!machine.isPresenceCodeValid());
++
++        machine.initialize();
++        event(machine, BoxEventType::KeyboardKey1);
++        BoxEventData badPin = {};
++        badPin.eventType = BoxEventType::KeyboardEnter;
++        strcpy(badPin.data.keyboardData.password, "9999");
++        machine.processEvent(badPin);
++        const uint32_t penalty = PASS_ERR_DELAY * 1000UL;
++        assert(machine.getCurrentState() == BoxState::BadPass);
++        tick(machine, start + penalty / 2);
++        assert(progress == 50);
++        event(machine, BoxEventType::KeyboardCancel);
++        event(machine, BoxEventType::KeyboardKey1);
++        assert(machine.getCurrentState() == BoxState::BadPass);
++        tick(machine, start + penalty);
++        assert(machine.getCurrentState() == BoxState::Password);
++
++        testStubMillis = start;
++        machine.initialize();
++        event(machine, BoxEventType::WebOpenBox);
++        tick(machine, start + DOOR_OPENING_TIMEOUT - 1);
++        assert(machine.getCurrentState() == BoxState::Opening);
++        tick(machine, start + DOOR_OPENING_TIMEOUT);
++        assert(machine.getCurrentState() == BoxState::Home);
++
++        testStubMillis = start;
++        machine.initialize();
++        event(machine, BoxEventType::WebOpenBox);
++        event(machine, BoxEventType::DoorOpened);
++        event(machine, BoxEventType::DoorClosed);
++        assert(ambient);
++        tick(machine, start + AMBIENT_TIMEOUT - 1);
++        assert(machine.getCurrentState() == BoxState::Closed && ambient);
++        tick(machine, start + AMBIENT_TIMEOUT);
++        assert(machine.getCurrentState() == BoxState::Home && !ambient);
++    }
++    testStubMillis = 0;
++    BoxStateMachine machine;
++        machine.setUIUpdateCallback(nullptr);
++    machine.initialize();
++    openingSucceeds = false;
++    event(machine, BoxEventType::WebOpenBox);
++    tick(machine, 0);
++    assert(machine.getCurrentState() == BoxState::Home);
++    std::cout << "State machine rollover tests passed\n";
++}
+--- /dev/null
++++ b/test/qr_timeout_rollover.cpp
+@@ -0,0 +1,41 @@
++#include <cassert>
++#include <iostream>
++#include "qr_scanner.h"
++int main()
++{
++    Stream uart;
++    QrScanner scanner;
++    QrScannerConfig config;
++    config.activationResponseWindowMs = 5;
++    config.frameIdleMs = 10;
++    scanner.begin(uart, config);
++    testStubMillis = UINT32_MAX - 9;
++    assert(scanner.startScan(10)); // Scan expires exactly at zero.
++    assert(scanner.update().type == QrScannerEventType::Activated);
++    assert(scanner.update(UINT32_MAX - 5).type == QrScannerEventType::None);
++    assert(scanner.state() == QrScannerState::WaitingActivationResponse);
++    scanner.update(UINT32_MAX - 4);
++    assert(scanner.state() == QrScannerState::WaitingCode);
++    assert(scanner.update(UINT32_MAX).type == QrScannerEventType::None);
++    assert(scanner.update(0).type == QrScannerEventType::ScanTimeout);
++    assert(!scanner.isActive());
++
++    assert(scanner.sendCommand("test", 20));
++    assert(scanner.update(9).type == QrScannerEventType::None);
++    assert(scanner.update(10).type == QrScannerEventType::CommandResponseTimeout);
++    assert(scanner.update(11).type == QrScannerEventType::None);
++
++    config.activationResponseWindowMs = 0;
++    config.defaultScanTimeoutMs = 0; // Zero duration intentionally disables the scan timeout.
++    scanner.begin(uart, config);
++    assert(scanner.startScan());
++    scanner.update();
++    assert(scanner.update(100).type == QrScannerEventType::None);
++    assert(scanner.isActive());
++    uart.input.push_back('X');
++    assert(scanner.update(UINT32_MAX - 4).type == QrScannerEventType::None);
++    assert(scanner.update(4).type == QrScannerEventType::None);
++    assert(scanner.update(5).type == QrScannerEventType::CodeReceived);
++    assert(!scanner.isActive());
++    std::cout << "QR scanner rollover tests passed\n";
++}
+--- /dev/null
++++ b/test/run_timeout_rollover.ps1
+@@ -0,0 +1,19 @@
++$ErrorActionPreference = "Stop"
++$root = Resolve-Path (Join-Path $PSScriptRoot "..")
++$outDir = Join-Path $root ".pio\build\timeout-rollover"
++New-Item -ItemType Directory -Force -Path $outDir | Out-Null
++$exe = Join-Path $outDir "timeout_rollover.exe"
++& g++ -std=c++17 -DBOX_SIMULATION "-I$root\test\stubs" "-I$root\include" "$root\test\timeout_rollover.cpp" "$root\src\timer.cpp" -o $exe
++if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
++& $exe
++if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
++$stateExe = Join-Path $outDir "state_timeout_rollover.exe"
++& g++ -std=c++17 -DBOX_SIMULATION "-I$root\test\stubs" "-I$root\include" "$root\test\state_timeout_rollover.cpp" "$root\src\state_machine.cpp" "$root\src\timer.cpp" -o $stateExe
++if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
++& $stateExe
++if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
++$qrExe = Join-Path $outDir "qr_timeout_rollover.exe"
++& g++ -std=c++17 "-I$root\test\stubs" "-I$root\include" -include "$root\test\stubs\qr_stream.h" "$root\test\qr_timeout_rollover.cpp" "$root\src\qr_scanner.cpp" -o $qrExe
++if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
++& $qrExe
++exit $LASTEXITCODE
+--- /dev/null
++++ b/test/stubs/qr_stream.h
+@@ -0,0 +1,10 @@
++#pragma once
++#include "Arduino.h"
++#include <deque>
++class Stream {
++public:
++    std::deque<uint8_t> input;
++    int available() { return static_cast<int>(input.size()); }
++    int read() { if (input.empty()) return -1; auto value = input.front(); input.pop_front(); return value; }
++    size_t write(const uint8_t*, size_t length) { return length; }
++};
