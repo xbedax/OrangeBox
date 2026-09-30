@@ -417,6 +417,9 @@ void BoxStateMachine::handleTimerEvent(const BoxEventData& event, unsigned long 
 // State entry/exit actions
 
 void BoxStateMachine::onEnterHome(unsigned long currentMillis) {
+    // Opening can time out without ever passing through Closed.
+    gpioHal.ambientOff();
+    // TODO: When camera control is implemented, stop it on entry to Home as well.
     context.credVerified = false;
     enableExternal();
     boxDisplay.writeInfoLine(INFOLINE_HOME);            // INFOLINE_HOME

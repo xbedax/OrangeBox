@@ -60,13 +60,66 @@ try {
   check(sent.command === 'get_creds' && sent.data.credId === 7 && sent.data.credCount === 5,
     'notification preserves pagination');
   const before = document.getElementById('coderows').innerHTML;
-  handleMessage({_command_: 'c_setcred', data: {credType: 'ctCode', success: false, error: 'invalid_date_range', lastresult: 'invalid_date_range'}});
+  handleMessage({_command_: 'c_lastresult', data: {lastresult: 'invalid_date_range'}});
+  handleMessage({_command_: 'c_setcred', data: {credType: 'ctCode', success: false, error: 'invalid_date_range'}});
   check(document.getElementById('coderows').innerHTML === before, 'error preserves rows');
   check(document.getElementById('lastresult').textContent === 'invalid_date_range', 'error shown');
+  handleMessage({_command_: 'c_lastresult', data: {lastresult: '<b>Saved</b>'}});
+  check(document.querySelector('#lastresult b').textContent === 'Saved', 'status replaces innerHTML');
+  handleMessage({_command_: 'c_lastresult', data: {lastresult: ''}});
+  check(document.getElementById('lastresult').innerHTML === '', 'empty status clears previous message');
+  handleMessage({_command_: 'c_lastresult', data: {lastresult: 'Ready'}});
+  handleMessage({_command_: 'c_lastresult', data: {}});
+  check(document.getElementById('lastresult').textContent === 'Ready', 'missing status does not overwrite text');
   handleMessage({_command_: 'c_setcred', data: {credType: 'ctCode', rowCount: 0,
     rows: {codeid: [], codename: [], codevalue: [], codefrom: [], codeto: []}}});
   check(document.querySelectorAll('#coderows tr').length === 0, 'empty response clears table');
-  document.body.dataset.testResult = 'PASS: credential UI rows, dialogs, actions, errors and refresh';
+  const openButtons = document.querySelectorAll('[data-operation="opendoor"]');
+  check(openButtons.length === 2, 'open operation includes launch and confirmation buttons');
+  openModal(document.getElementById('modal-confirm'), null);
+  handleMessage({_command_: 'c_enordis', data: {opendoor: 'disable'}});
+  check([...openButtons].every(button => button.disabled), 'open operation disabled even with dialog open');
+  const messageCount = testMessages.length;
+  document.getElementById('buttonconfirm').click();
+  check(testMessages.length === messageCount, 'disabled confirmation does not send open request');
+  handleMessage({_command_: 'c_enordis', data: {opendoor: 'enable', savebutton: 'disable'}});
+  check([...openButtons].every(button => button.disabled), 'unknown permission does not enable operation');
+  check(!document.getElementById('savebutton').disabled, 'operation message does not target arbitrary DOM IDs');
+  handleMessage({_command_: 'c_enordis', data: {}});
+  check([...openButtons].every(button => button.disabled), 'missing permission preserves state');
+  handleMessage({_command_: 'c_enordis', data: {opendoor: 'open'}});
+  check([...openButtons].every(button => !button.disabled), 'open permission enables both buttons');
+
+  // Diagnostics are optional in the page; a response must also work without them.
+  handleMessage({_command_: 'c_diagnostics', data: {html: '<b>Statistics</b>'}});
+  const diagnosticElements = ['diagnostics', 'diagnostics_text', 'diagnostics_json',
+    'diagnostic_snapshots', 'diagnostic_snapshots_text', 'diagnostic_snapshots_json',
+    'diagnostic_snapshot_count'];
+  for (const id of diagnosticElements) {
+    const element = document.createElement('div');
+    element.id = id;
+    document.body.appendChild(element);
+  }
+  handleMessage({_command_: 'c_diagnostics', data: {
+    html: '<b>Statistics</b>', text: '<plain text>', json: '{"total":1}',
+    lastresult: 'Must not replace status'
+  }});
+  check(document.querySelector('#diagnostics b').textContent === 'Statistics', 'diagnostic HTML rendered');
+  check(document.getElementById('diagnostics_text').textContent === '<plain text>' &&
+    document.getElementById('diagnostics_text').children.length === 0, 'diagnostic text is literal');
+  check(document.getElementById('diagnostics_json').textContent === '{"total":1}', 'diagnostic JSON displayed');
+  check(document.getElementById('lastresult').textContent === 'Ready', 'diagnostics cannot address arbitrary elements');
+  handleMessage({_command_: 'c_diagnostic_snapshots', data: {
+    count: 1, html: '<b>Snapshot</b>', text: 'Snapshot text', json: '[{}]'
+  }});
+  check(document.querySelector('#diagnostic_snapshots b').textContent === 'Snapshot', 'snapshot HTML rendered');
+  check(document.getElementById('diagnostic_snapshots_text').textContent === 'Snapshot text' &&
+    document.getElementById('diagnostic_snapshots_json').textContent === '[{}]', 'snapshot formats displayed');
+  handleMessage({_command_: 'c_diagnostic_snapshots', data: {count: 0, html: ''}});
+  check(document.getElementById('diagnostic_snapshot_count').textContent === '0' &&
+    document.getElementById('diagnostic_snapshots').innerHTML === '', 'empty snapshots clear HTML and count');
+  check(document.getElementById('diagnostic_snapshots_text').textContent === 'Snapshot text', 'omitted formats preserved');
+  document.body.dataset.testResult = 'PASS: credential UI, operation permissions and diagnostic messages';
 } catch (error) {
   document.body.dataset.testResult = 'FAIL: ' + error.message;
 }

@@ -29,6 +29,7 @@ The current UI and mock controller already use a general credential-list concept
 The production firmware is still primarily PIN-oriented (`get_pins`, `set_pin`, `PinRecord`, `pinStorage`, etc.). A planned code refactor is to rename functionality that is truly generic from **pin** to **credential**, while keeping PIN-specific fields and commands PIN-specific.
 
 This documentation therefore uses **credential** for generic concepts and **PIN** / **code** for concrete credential types.
+$$$  Celý firmware už by měl být agnostický. Pin a Code se používá jen tam, kde se jedná o specifický typ, včechny společné části používají cred $$$
 
 ### 2.2 HTML beacon / HTML key
 
@@ -48,6 +49,8 @@ Examples currently used include:
 - `coderows`
 - `lastresult`
 - diagnostic element IDs when present in a UI
+
+$$$ Mělo by být odstraněno. Až poladíme protokol, nechám pročistit headery. $$$
 
 ## 3. Transport
 
@@ -108,6 +111,7 @@ Timestamp semantics are currently inconsistent and must not yet be treated as a 
 Therefore the earlier description "epoch time in milliseconds" is **not valid for all current senders**.
 
 A future protocol revision should normalize both the field name and time base.
+$$$ tohle by mělo být pořešeno, mock, controller i UI by měly používat výhradně Unix epoch time, odpovídajícím způsobem je upraven i mechanismus počítání driftu hodin $$$
 
 ## 5. Command inventory
 
@@ -787,22 +791,26 @@ Firmware supports `DOOR_MIXED` and `door_state_mixed`, but current UI does not. 
 ### 17.6 `_scope_`
 
 Supported by UI sender; ignored by current production dispatcher.
+$$$ Tohle je asi kandidát na zrušení, nové zprávy ho nepoužívají, nicméně zatím budu zneužívat toho, že přijímací rutiny controlleru ho ignorují a odložím finální rozhodnutí. $$$
 
 ### 17.7 Mock envelope field name
 
 Mock uses `timestamp` rather than `_timestamp_` in its outgoing messages. The UI command handling still works because it dispatches primarily by `_command_`, but clock-drift processing expects `_timestamp_`.
-
+$$$ Mělo by být pořešeno, mock posílá _timestamp_, globálně by měl být pořešen i rozpor sekundy / milisekundy, mock má explicitní proměnnou $clockdrift pro trestování posunu hodin controlleru $$$
 ### 17.8 Ambient `lightId`
 
 UI sends it; production handler currently ignores request data.
+$$$ Tohle bych zatím nechal být. Předpokládám,  že zatím se rozsvěcí všechna světla v boxu naráz, (škoda mosfetů), kdybychom se někdy dopracovali k lednici, asi bych v ní nechtěl zbytečně topit. Spíš mi připiš do poznámek, abych doplnil formální test čísla dveří do firmware. $$$
 
 ### 17.9 Pager
 
 Registered but not implemented beyond logging/empty response.
+$$$ Pager určitě bude, teď na něj není čas. Nejde jen o pager samotný, musí se udělat i celý hanshaking změnila se tabulka - řeknete si, jako část chcete poslat mezi controllerem a UI $$$
 
 ### 17.10 Table update strategy
 
 Production PIN mutation currently broadcasts complete `pinrows`; source comments say the intended future design is an update notification followed by client-driven refresh of the currently visible page.
+$$$ viz pager $$$
 
 ## 18. Guidance for the credential refactor
 
@@ -817,20 +825,22 @@ This section is intended as an implementation constraint for Codex or another co
 7. **Preserve generic UI mutation commands** (`c_content`, `c_visibility`, `c_enordis`) because both UI and firmware are structured around them.
 8. **Separate refactoring from protocol cleanup.** Timestamp normalization, `_scope_`, mixed-door UI, paging semantics, and update notifications should be deliberate protocol changes rather than accidental consequences of renaming.
 
+$$$ Tohle projdi pořádně, refaktor by měl být hotový, FW uz umí spravovat PINy i Čísla zakázek, je to sjednoceno pod generické zprávy cred_* $$$
+
 ## 19. Candidate next protocol decisions
 
 The following decisions are not resolved by the supplied implementation and should be made explicitly before considering this document a stable protocol specification:
 
-- canonical timestamp field and time base
-- formal semantics of `_scope_`
+- canonical timestamp field and time base $$$ pořešeno $$$
+- formal semantics of `_scope_` 
 - final credential paging contract (`credId`, `credCount`, ordering, return count, end-of-list indication)
 - whether credential table responses remain HTML fragments or become structured records rendered by the UI
 - notification format for credential-list changes
-- production storage/handler design for `ctCode` / `set_code`
+- production storage/handler design for `ctCode` / `set_code` $$$ pořešeno $$$
 - intended meaning and response for `get_status`
-- how door number `0` is interpreted in the final multi-door model
-- UI representation of `DOOR_MIXED`
-- whether `c_content`, `c_visibility`, `c_enordis` remain the long-term UI API or become an intermediate compatibility layer
+- how door number `0` is interpreted in the final multi-door model $$$ tady nevím, kam míříš, dveře 0 jsou prostě první dveře, speciální význam má jen 255 - unknown, logické dveře jsou stejné s fyzickými, pokud nedojde ke spojení, číslo spojených dveří se musí vejít mezi poslední číslo fyzických dveří a 254, protože protokol nerozlišuje fyzické a logické dveře, de facto pracuje jen s logickými dveřmi $$$
+- UI representation of `DOOR_MIXED` $$$ tohle musí počkat, řešení tohodle musí předcházet hluboká orba v UI (tlačítko pro každé dveře, editor dveří) i v controlleru, tam zase úplně chybí ukládání konfigurace $$$
+- whether `c_content`, `c_visibility`, `c_enordis` remain the long-term UI API or become an intermediate compatibility layer $$$ tohle všechno jsou kandidáti na odstřel, byl to nejrychlejší způsob jak docílit funkčního html UI, ale je to krajně nevhodné pro implementaci nativní aplikace pro mobily: ambinet a door už namísto c_visibility používá specifické příkazy c_ambientstate a c_doorstate, pro přenos tabulek se namísto c_content používá c_setcred - vše čisté Json zprávy. c_enordis zůstane zachován jako  identifikátor příkazu, ale změní se obsah, sekce data bude obsahovat jen identfikátory funkčních celků UI a cílový stav door_controls:disable  cred_changes:enabled .... Vznikne nový příkaz c_setlaststatus. Obecně je cílem oddělit controller od konkrkétní html reprezentace. $$$
 
 ---
 

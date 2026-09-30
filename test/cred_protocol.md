@@ -64,7 +64,7 @@ unbounded endpoints are still stored as zero in the firmware.
 Mutation acknowledgements also use c_setcred:
 
 ```json
-{"credType":"ctCode","success":true,"credId":2,"action":"created","lastresult":"Credential saved"}
+{"credType":"ctCode","success":true,"credId":2,"action":"created"}
 ```
 
 All clients then receive a small c_setcred invalidation message:
@@ -76,11 +76,39 @@ All clients then receive a small c_setcred invalidation message:
 Each client requests its current page again using get_creds. The UI keeps one
 page selection per type, so edits do not replace another client's pagination.
 A response without `rows` is an acknowledgement, notification or error, not an
-empty table. Error responses use `success:false`, `error` and `lastresult`:
+empty table. Error responses use `success:false` and `error`:
 
 ```json
-{"credType":"ctCode","success":false,"error":"invalid_date_range","lastresult":"invalid_date_range"}
+{"credType":"ctCode","success":false,"error":"invalid_date_range"}
 ```
+
+Human-readable status is sent separately, before the structured response, using
+`c_lastresult` for credentials, door operations and diagnostic snapshots:
+
+```json
+{"_command_":"c_lastresult","_timestamp_":1790437945,"data":{"lastresult":"Credential saved"}}
+```
+
+The UI replaces the innerHTML of `#lastresult`; an empty string clears it.
+Diagnostic content uses `c_diagnostics` (`html`, `text`, `json`) and
+`c_diagnostic_snapshots` (`count`, `html`, optionally `text` and `json`).
+The `json` field retains the serialized JSON string returned by diagnostics.
+`get_diagnostics` returns the former; both `snapshot_diagnostics` and
+`get_diagnostic_snapshots` return the latter. Creating a snapshot sends only
+`count` and `html`, after its separate `c_lastresult` status.
+Only the UI maps these fields to DOM IDs; missing diagnostic elements are ignored.
+Firmware no longer sends `c_content`.
+
+`c_enordis` addresses operations, not DOM IDs. Entering password entry sends
+`{"opendoor":"disable"}` in `data`; returning to Home sends `{"opendoor":"open"}`.
+The existing disable notification during door opening uses the same operation key.
+The UI disables both the Open Box button and its confirmation button, including
+when the confirmation dialog is already open. Unknown operations and permission
+values are ignored. This does not introduce operation tickets or edit locks.
+
+The transport-independent
+credential handlers return lastresult internally; main.cpp extracts it into
+the dedicated message before sending the remaining structured response.
 
 Examples rejected without changing storage:
 

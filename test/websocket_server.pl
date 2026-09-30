@@ -17,7 +17,11 @@
 #							pintable=<file with initial pins>		pinid,pinname,pinvalue,amount,not_before,not_after
 #							codetable=<file with initial codes>		codeid,codename,codevalue,not_before,not_after
 #			Status
+#			c_setcred		unified support for pins and parcel numbers
+#			c_ambientstate	refactored ambient state signalization
+#			c_doorstate		refactored door state signalization
 #
+
 
 
 
@@ -27,6 +31,14 @@ use warnings;
 use Net::WebSocket::Server;
 use JSON::MaybeXS;
 use Data::Dumper;
+
+use constant {
+	OPEN => 'open',
+	CLOSED => 'closed',
+	ON => 'on',
+	OFF => 'off',
+
+};
 
 my $configfile;
 my $codefile;
@@ -45,20 +57,25 @@ my $lastaction = "";								#last action result
 my $lastpin = 0;										#first available pinId
 my $lastcode = 0;
 my $last_command_status = 'wat';
-my $door_state_closed = 'yes';
-my $door_state_open = 'no';
-my $ambient_state_off = 'yes';
-my $ambient_state_on = 'no';
+my $door_state_closed = 'yes';						#smazat
+my $door_state_open = 'no';							#smazat
+my $ambient_state_off = 'yes';						#smazat
+my $ambient_state_on = 'no';						#smazat
 my $prevstat;
 my $prevping;
 my $globalnow;
 my $statuschange = 0;
+my$clockdrift = 100;								# added to all timestamps to simulate inacurrate clock
+my $currentdoorstate = CLOSED;
+my $currentdoor	= 0;
+my $ambientstate = OFF;
+
 
 
 my $json = JSON::MaybeXS->new(utf8 => 1, pretty => 0);
 my $ws;
 
-$globalnow = $prevstat = $prevping = time();
+$globalnow = $prevstat = $prevping = time() + $clockdrift;
 
 foreach my $argument (@ARGV) {
 	if ( $argument =~ /port=(.+)/ ){
@@ -101,8 +118,8 @@ foreach my $argument (@ARGV) {
 
 my $statemessage_src = sub {
     return {
-        _timestamp_ => time(),
-        _command_ => 'c_content',
+        _timestamp_ => time() + $clockdrift,
+        _command_ => 'c_lastresult',
         data => {
             lastresult => $last_command_status,
         },
@@ -111,7 +128,7 @@ my $statemessage_src = sub {
 
 my $door_src =  sub {
 	return {
-		_timestamp_ => time(),
+		_timestamp_ => time() + $clockdrift,
 		_command_ => 'c_visibility',
 		data => {
 			door_state_open => $door_state_open,
@@ -122,7 +139,7 @@ my $door_src =  sub {
 
 my $ambient_src = sub {
 	return {
-		_timestamp_ => time(),
+		_timestamp_ => time() + $clockdrift,
 		_command_ => 'c_visibility',
 		data => {
 			ambient_state_off => $ambient_state_off,
@@ -154,7 +171,7 @@ my $ambient_src = sub {
 
 my $codetable_src = sub {
 	return {
-		_timestamp_ => time(),
+		_timestamp_ => time() + $clockdrift,
 		_command_ => 'c_setcred',
 		data => {
 		credType => 'ctCode',
@@ -166,7 +183,7 @@ my $codetable_src = sub {
 
 my $pintable_src = sub {
 	return {
-		_timestamp_ => time(),
+		_timestamp_ => time() + $clockdrift,
 		_command_ => 'c_setcred',
 		data => {
 		credType => 'ctPin',
@@ -176,9 +193,10 @@ my $pintable_src = sub {
 	}
 };
 
+# not needed anymore, delete
 my $openboxmessage_src =  sub {
 	return {
-		_timestamp_ => $globalnow,
+		_timestamp_ => time() + $clockdrift,
 		_command_ => 'c_visibility',
 		data => {
 			door_state_open => 'yes',
@@ -188,6 +206,28 @@ my $openboxmessage_src =  sub {
 		},
 	}
 };
+
+my $doorstatemessage_src =  sub {
+	return {
+		_timestamp_ => time() + $clockdrift,
+		_command_ => 'c_doorstate',
+		data => {
+			door_num => $currentdoor,
+			state => $currentdoorstate,
+		},
+	}
+};
+
+my $ambientstatemessage_src =  sub {
+	return {
+		_timestamp_ => time() + $clockdrift,
+		_command_ => 'c_ambientstate',
+		data => {
+			state => $ambientstate,
+		},
+	}
+};
+
 
 my @knownPins = ();
 my @knownCodes = ();
@@ -481,7 +521,7 @@ $ws=Net::WebSocket::Server->new(
 	tick_period=>$tickperiod,
 	on_tick=>sub {
 		my ($serv) = @_;
-        my $now = time();
+        my $now = time() + $clockdrift;
 		if ($now - $prevstat > 15) {					# status date
 			$prevstat = $now;
 		}
@@ -492,18 +532,18 @@ $ws=Net::WebSocket::Server->new(
 				my $action = $todolist[0][1];
 				print "Action to perform: $action\n";
 				if ( $action eq 'closedoor' ) {
-					$door_state_open = 'no';
-					$door_state_closed = 'yes';
-					my $mdoor = $json->encode($door_src->());
+					$currentdoorstate = CLOSED;
+					$currentdoor = 0;
+					my $mdoor = $json->encode($doorstatemessage_src->());
 					print"Sending: $mdoor\n";
 					foreach($ws->connections()){
 						$_->send_utf8($mdoor);
 					}
 				}
 				if ( $action eq 'ambientoff' ) {
-					$ambient_state_off = 'yes';
-					$ambient_state_on = 'no';
-					my $mambient = $json->encode($ambient_src->());
+					$ambientstate = OFF;
+
+					my $mambient = $json->encode($ambientstatemessage_src->());
 					print"Sending: $mambient\n";
 					foreach($ws->connections()){
 						$_->send_utf8($mambient);
@@ -522,7 +562,7 @@ $ws=Net::WebSocket::Server->new(
 					next;
 				}
 				print "Watchdog for $conn \n";
-				$conn->send_utf8('{"_timestamp_":"' . time() . '","_command_":"_ping_","data":{}}');
+				$conn->send_utf8('{"_timestamp_":"' . (time() + $clockdrift) . '","_command_":"_ping_","data":{}}');
 			}
 		}
 		
@@ -533,7 +573,7 @@ $ws=Net::WebSocket::Server->new(
 		$conn->on(
 			utf8=>sub{
 				my($conn,$msg)=@_;
-				my $now = time();
+				my $now = time() + $clockdrift;
 				print"Received:$msg\n";
 				my $rmsg = $json->decode($msg);
 				unless ( defined $$rmsg{'_command_'} ) {
@@ -542,28 +582,31 @@ $ws=Net::WebSocket::Server->new(
 				}
 				my $rcommand = $$rmsg{'_command_'};
 				print "Command decoded: $rcommand\n";
-				$last_pong{$conn} = time();
+				$last_pong{$conn} = time() + $clockdrift;
 				if($rcommand eq 'opendoor'){
-					$door_state_open = 'yes';
-					$door_state_closed = 'no';
-					$ambient_state_on = 'yes';
-					$ambient_state_off = 'no';
+					$currentdoorstate = OPEN;
+					$currentdoor = 0;
 					push (@todolist, [$now + $dooropentime, 'closedoor']);
 					push (@todolist, [$now + $dooropentime + $ambientonoverhang, 'ambientoff']);
-#					print Dumper @todolist;
-					my $mmessage = $json->encode($openboxmessage_src->());
-					print"Sending: $mmessage\n";
+					my $mdoor = $json->encode($doorstatemessage_src->());
+					print"Sending: $mdoor\n";
 					foreach($ws->connections()){
-						$_->send_utf8($mmessage);
+						$_->send_utf8($mdoor);
+					}
+					$ambientstate = ON;
+					my $mambient = $json->encode($ambientstatemessage_src->());
+					print"Sending: $mambient\n";
+					foreach($ws->connections()){
+						$_->send_utf8($mambient);
 					}
 				}
 				if($rcommand eq 'get_door' ){
-					my $mdoor = $json->encode($door_src->());
+					my $mdoor = $json->encode($doorstatemessage_src->());
 					print"Sending: $mdoor\n";
 					$conn->send_utf8($mdoor);
 				}
 				if($rcommand eq 'get_ambient' ){
-					my $mambient = $json->encode($ambient_src->());
+					my $mambient = $json->encode($ambientstatemessage_src->());
 					print"Sending: $mambient\n";
 					$conn->send_utf8($mambient);
 				}
@@ -602,7 +645,7 @@ $ws=Net::WebSocket::Server->new(
 				delete $last_pong{$conn};
 			},
 		);
-		$last_pong{$conn} = time();
+		$last_pong{$conn} = time() + $clockdrift;
 	},
 );
 $ws->start;

@@ -1,7 +1,7 @@
 // WebSocket config — adjust URL to your server
 //const WS_URL = "wss://box.inforoom.cz";
 var WS_URL = "wss://" + location.hostname + "/";
-//WS_URL = "ws://127.0.0.1:8080";
+WS_URL = "ws://127.0.0.1:8080";
 let ws = null;
 var lastContact = 0;
 var connectionState = 0;      //0 - disconnected, 1 - unknown, 2 - connected
@@ -51,14 +51,18 @@ const postFormData = (formData, mycommand, myscope) => {
     // Queue the send for when the connection is ready
     socket.addEventListener("open", () => socket.send(payload), { once: true });
   }
-  console.log("Sent: " + payload);
+  if (! mycommand == '_pong_' ) {
+	console.log("Sent: " + payload);
+  }
 };
 
 function onMessage(event) {
   var state;
   
-  console.log('Received');
-  console.log(event.data);
+  if (-1 ==  event.data.search('_ping_')) {
+	  console.log('Received');
+	  console.log(event.data);
+  }
   lastContact = Date.now()/1000;
   
   var myObj = JSON.parse(event.data);
@@ -70,7 +74,9 @@ function onMessage(event) {
 		driftPtr = 0;
 	}
   }
-  console.log("Command: " + command + " / " + lastContact + " // " + cumulatedDrift + " /-/ " + boxClockDrift + "( " + messagesReceived + ")");
+  if (!  command == '_ping_' ) {
+	console.log("Command: " + command + " / " + lastContact + " // " + cumulatedDrift + " /-/ " + boxClockDrift + "( " + messagesReceived + ")");
+  }
   if (command == "_ping_") {
     const data = {};  
     data["pongdata"] = "some_data";

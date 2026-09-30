@@ -17,6 +17,8 @@ bool CredStorage::usedCred(uint8_t) { return true; }
 static uint8_t progress;
 static bool ambient;
 static bool openingSucceeds = true;
+static uint8_t lastUIAction;
+static void recordUIAction(uint8_t action) { lastUIAction = action; }
 void BoxDisplay::setOpenDoorList() {}
 void BoxDisplay::writeStatusLine() {}
 void BoxDisplay::writeInfoLine(uint8_t) {}
@@ -50,10 +52,12 @@ int main()
     for (uint32_t start : {uint32_t(0), UINT32_MAX - 999U}) {
         testStubMillis = start;
         BoxStateMachine machine;
-        machine.setUIUpdateCallback(nullptr);
+        machine.setUIUpdateCallback(recordUIAction);
         machine.initialize();
+        assert(lastUIAction == UI_ENABLE_DOOR_CONTROLS);
         assert(!machine.isPresenceCodeValid());
         event(machine, BoxEventType::KeyboardKey1);
+        assert(lastUIAction == UI_DISABLE_DOOR_CONTROLS);
         const uint32_t passwordDuration = PASS_ENTRY_TIMEOUT * 1000UL;
         tick(machine, start + passwordDuration / 2);
         assert(machine.getCurrentState() == BoxState::Password);
@@ -62,6 +66,7 @@ int main()
         assert(machine.getCurrentState() == BoxState::Password);
         tick(machine, start + passwordDuration);
         assert(machine.getCurrentState() == BoxState::Home);
+        assert(lastUIAction == UI_ENABLE_DOOR_CONTROLS);
 
         testStubMillis = start;
         machine.initialize();
@@ -96,9 +101,17 @@ int main()
         machine.initialize();
         event(machine, BoxEventType::WebOpenBox);
         tick(machine, start + DOOR_OPENING_TIMEOUT - 1);
-        assert(machine.getCurrentState() == BoxState::Opening);
+        assert(machine.getCurrentState() == BoxState::Opening && ambient);
         tick(machine, start + DOOR_OPENING_TIMEOUT);
-        assert(machine.getCurrentState() == BoxState::Home);
+        assert(machine.getCurrentState() == BoxState::Home && !ambient);
+
+        // The explicit timeout event must perform the same Home cleanup.
+        testStubMillis = start;
+        machine.initialize();
+        event(machine, BoxEventType::WebOpenBox);
+        assert(ambient);
+        event(machine, BoxEventType::DoorOpenTimeout);
+        assert(machine.getCurrentState() == BoxState::Home && !ambient);
 
         testStubMillis = start;
         machine.initialize();

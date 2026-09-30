@@ -208,19 +208,47 @@ void cameraStop(){
 }
 
 
-// Websocket get_ambient request handler
-// Reads ambient ligth pin state and returns it in JSON response. Request is expected to be empty, but can contain some parameters in the future, e.g. for calibration of the sensor.
+// Separate human-readable status from structured replies and diagnostic content.
+void sendLastResult(AsyncWebSocketClient* recipient, JsonDocument& response) {
+    if (!response[MSG_LASTRESULT].is<const char*>()) return;
+    JsonDocument status;
+    status[MSG_LASTRESULT] = response[MSG_LASTRESULT];
+    response.remove(MSG_LASTRESULT);
+    webSocketManager.sendMessage(recipient, COMM_LASTRESULT, status);
+}
+
+// State payloads are shared by direct replies and change notifications.
+void sendDoorState(AsyncWebSocketClient* recipient, uint8_t doorNum, uint8_t state) {
+    if (state != DOOR_OPEN && state != DOOR_CLOSED && state != DOOR_MIXED) return;
+    JsonDocument response;
+    response["door_num"] = doorNum;
+    // The UI has two states: a partly open group must not appear closed.
+    response["state"] = state == DOOR_CLOSED ? "closed" : "open";
+    if (recipient) webSocketManager.sendMessage(recipient, COMM_DOOR_STATE, response);
+    else webSocketManager.notifyClients(COMM_DOOR_STATE, response);
+}
+
+void sendAmbientState(AsyncWebSocketClient* recipient, uint8_t state) {
+    JsonDocument response;
+    response["state"] = state == AMBIENT_ON ? "on" : "off";
+    if (recipient) webSocketManager.sendMessage(recipient, COMM_AMBIENT_STATE, response);
+    else webSocketManager.notifyClients(COMM_AMBIENT_STATE, response);
+}
+
+void notifyAmbientChange() {
+    static uint8_t lastState = INVALID_PIN;
+    const uint8_t state = gpioHal.getAmbient();
+    if (state != lastState) {
+        sendAmbientState(nullptr, state);
+        lastState = state;
+    }
+}
+
+// Websocket get_ambient request handler.
 void handleGetAmbient(AsyncWebSocketClient *sender, JsonObj data)
 {
-    JsonDocument response;
-    if (gpioHal.getAmbient() == AMBIENT_ON) {
-        response[AMBIENT_OFF_BEACON] = STATE_NEGATIVE;
-        response[AMBIENT_ON_BEACON] = STATE_POSITIVE;  
-    } else {
-        response[AMBIENT_OFF_BEACON] = STATE_POSITIVE;
-        response[AMBIENT_ON_BEACON] = STATE_NEGATIVE;  
-    }
-    webSocketManager.sendMessage(sender, COMM_VISIBILITY, response);
+    (void)data;
+    sendAmbientState(sender, gpioHal.getAmbient());
 }
 
 //Get doors state request:
@@ -234,7 +262,7 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     if (doorNumValue.isNull()) {
         logger.logPrint(SEVERITY_ERROR, "Error: Missing door number in request", BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Missing door number in request";
-        webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
     }
 
@@ -244,14 +272,14 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
       if (doorNumStr == nullptr || doorNumStr[0] == '\0') {
         logger.logPrint(SEVERITY_ERROR, "Error: Missing door number in request", BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Missing door number in request";
-        webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
       }
       lnum = strtoul(doorNumStr, &endptr, 10);
       if (*endptr != '\0') {
         logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNumStr), BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Invalid door number " + String(doorNumStr);
-        webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
       }
     } else if (doorNumValue.is<unsigned long>()) {
@@ -259,14 +287,14 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     } else {
       logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number format", BOX_HOST_NAME, LOGAREA_ACCESS);
       response[MSG_LASTRESULT] = "Error: Invalid door number format";
-      webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+      webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
       return;
     }
 
-    if (lnum > 254 ) { // 0 is not a valid door number, and 255 is reserved for special purposes
+    if (lnum > 254 ) { // Door 0 is valid; 255 is reserved for unknown/special values
       logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
       response[MSG_LASTRESULT] = "Error: Invalid door number " + String(lnum);
-      webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+      webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
       return;
     }
     doorNum = static_cast<uint8_t>(lnum);
@@ -276,26 +304,9 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     uint8_t isOpen = gpioHal.readDoorState(doorNum);
     if(isOpen != DOOR_UNKNOWN) {
       if (isOpen == DOOR_MIXED) {
-        isOpen = DOOR_OPEN;                 // ### to be fixed when UI can properly handle MIXED state, meanwhile show mixed state as open for the response, but log it as a warning
         logger.logPrint(SEVERITY_WARNING, "Warning: Mixed state detected for door " + String(doorNum), BOX_HOST_NAME, LOGAREA_ACCESS);
-      } 
-      if (isOpen == DOOR_OPEN) {
-        response[DOOR_OPEN_BEACON] = STATE_POSITIVE;
-        response[DOOR_CLOSED_BEACON] = STATE_NEGATIVE;
-        response[DOOR_MIXED_BEACON] = STATE_NEGATIVE;
-        logger.logPrint(SEVERITY_INFO, "Door " + String(doorNum) + " is OPEN", BOX_HOST_NAME, LOGAREA_ACCESS);
-      } else if (isOpen == DOOR_CLOSED) {
-        response[DOOR_OPEN_BEACON] = STATE_NEGATIVE;
-        response[DOOR_CLOSED_BEACON] = STATE_POSITIVE;
-        response[DOOR_MIXED_BEACON] = STATE_NEGATIVE;
-        logger.logPrint(SEVERITY_INFO, "Door " + String(doorNum) + " is CLOSED", BOX_HOST_NAME, LOGAREA_ACCESS);
-      } else { // isOpen == DOOR_MIXED
-        response[DOOR_OPEN_BEACON] = STATE_NEGATIVE;
-        response[DOOR_CLOSED_BEACON] = STATE_NEGATIVE;
-        response[DOOR_MIXED_BEACON] = STATE_POSITIVE;
-        logger.logPrint(SEVERITY_WARNING, "Door " + String(doorNum) + " is in MIXED state", BOX_HOST_NAME, LOGAREA_ACCESS);
       }
-      webSocketManager.sendMessage(sender, COMM_VISIBILITY, response);
+      sendDoorState(sender, doorNum, isOpen);
     } else {
       logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNum), BOX_HOST_NAME, LOGAREA_ACCESS);
     }
@@ -306,6 +317,7 @@ void handleGetCreds(AsyncWebSocketClient* sender, JsonObj data)
 {
   JsonDocument response;
   buildCredResponse(credStorage, data, response);
+  sendLastResult(sender, response);
   webSocketManager.sendMessage(sender, COMM_CREDS, response);
 }
 
@@ -313,10 +325,10 @@ void handleGetDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
 {
   (void)data;
   JsonDocument response;
-  response["diagnostics"] = boxDiagnostics.showStatistics(DiagnosticFormat::Html);
-  response["diagnostics_text"] = boxDiagnostics.showStatistics(DiagnosticFormat::Text);
-  response["diagnostics_json"] = boxDiagnostics.statisticsJson();
-  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+  response["html"] = boxDiagnostics.showStatistics(DiagnosticFormat::Html);
+  response["text"] = boxDiagnostics.showStatistics(DiagnosticFormat::Text);
+  response["json"] = boxDiagnostics.statisticsJson();
+  webSocketManager.sendMessage(sender, COMM_DIAGNOSTICS, response);
 }
 
 void handleSnapshotDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
@@ -325,20 +337,21 @@ void handleSnapshotDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
   JsonDocument response;
   bool stored = boxDiagnostics.snapshotStatistics();
   response[MSG_LASTRESULT] = stored ? "Diagnostic snapshot stored" : "Diagnostic snapshot failed";
-  response["diagnostic_snapshot_count"] = boxDiagnostics.snapshotCount();
-  response["diagnostic_snapshots"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
-  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+  response["count"] = boxDiagnostics.snapshotCount();
+  response["html"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
+  sendLastResult(sender, response);
+  webSocketManager.sendMessage(sender, COMM_DIAGNOSTIC_SNAPSHOTS, response);
 }
 
 void handleGetDiagnosticSnapshots(AsyncWebSocketClient *sender, JsonObj data)
 {
   (void)data;
   JsonDocument response;
-  response["diagnostic_snapshot_count"] = boxDiagnostics.snapshotCount();
-  response["diagnostic_snapshots"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
-  response["diagnostic_snapshots_text"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Text);
-  response["diagnostic_snapshots_json"] = boxDiagnostics.snapshotsJson();
-  webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+  response["count"] = boxDiagnostics.snapshotCount();
+  response["html"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
+  response["text"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Text);
+  response["json"] = boxDiagnostics.snapshotsJson();
+  webSocketManager.sendMessage(sender, COMM_DIAGNOSTIC_SNAPSHOTS, response);
 }
 
 
@@ -354,7 +367,7 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
     if (lnum > 254 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
       logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
       response["lastresult"] = "Error: Invalid door number " + String(lnum);
-      webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+      webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
       return;
     }
     if (data[MSG_PRESENCECODE] != nullptr) {
@@ -365,13 +378,13 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
       if (checkPresence && strlen(presenceCode) == 0) {
         logger.logPrint(SEVERITY_ERROR, "Error: Presence code required but not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Presence code required but not provided";
-        webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
       }
       if(checkPresence && (!boxStateMachine.isPresenceCodeValid() || strcmp(presenceCode, boxStateMachine.getPresenceCode()) != 0)) {
         logger.logPrint(SEVERITY_ERROR, "Error: Invalid presence code " + String(presenceCode), BOX_HOST_NAME, LOGAREA_ACCESS);
         response[MSG_LASTRESULT] = "Error: Invalid presence code " + String(presenceCode);
-        webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
       }
     }
@@ -379,7 +392,7 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
 
     logger.logPrint(SEVERITY_INFO, "Opening box door number " + String(num), BOX_HOST_NAME, LOGAREA_ACCESS);
     response[MSG_LASTRESULT] = "Opening door number " + String(num);
-    webSocketManager.sendMessage(sender, COMM_CONTENT, response);
+    webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
     BoxEventData event = {};
     event.eventType = BoxEventType::WebOpenBox;
     event.data.doorData.doorNum = num;
@@ -392,6 +405,7 @@ void handleSetCred(AsyncWebSocketClient* sender, JsonObj data)
 {
   JsonDocument response;
   const bool changed = applyCredChange(credStorage, data, response);
+  sendLastResult(sender, response);
   webSocketManager.sendMessage(sender, COMM_CREDS, response);
   if (changed) {
     // Each client reloads its current page, preserving its type and pagination.
@@ -545,12 +559,12 @@ bool startVpn() {
 void UIcontrolCallback(uint8_t action ) { /*const char* arg, AsyncWebSocketClient *sender*/
   JsonDocument response;
   if (action == UI_DISABLE_DOOR_CONTROLS) {
-    response[DOOR_CONTROLS_BEACON] = MSG_DISABLE;
+    response[COMM_OPEN_BOX] = MSG_DISABLE;
     webSocketManager.notifyClients(COMM_ENORDIS, response);
     return;
   }
   if (action == UI_ENABLE_DOOR_CONTROLS) {
-    response[DOOR_CONTROLS_BEACON] = MSG_ENABLE;
+    response[COMM_OPEN_BOX] = MSG_OPERATION_OPEN;
     webSocketManager.notifyClients(COMM_ENORDIS, response);
     return;
   }
@@ -748,7 +762,6 @@ void handleDueActions(uint8_t action, const char* arg) {
   // For example:
   switch (action) {
     case NOTIFY_DOOR_CHANGE: {
-        JsonDocument response;
         uint8_t doorNum = atoi(arg);
         uint8_t isOpen = gpioHal.readDoorState(doorNum);
         if (isOpen == DOOR_MIXED) {
@@ -757,20 +770,7 @@ void handleDueActions(uint8_t action, const char* arg) {
         if (isOpen == DOOR_UNKNOWN) {
           logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNum) + " in notification", BOX_HOST_NAME, LOGAREA_ACCESS);
         }
-        if (isOpen == DOOR_OPEN) {
-          response["door_state_open"] = "yes";
-          response["door_state_closed"] = "no";
-          response["door_state_mixed"] = "no";
-        } else if (isOpen == DOOR_CLOSED) {
-          response["door_state_open"] = "no";
-          response["door_state_closed"] = "yes";
-          response["door_state_mixed"] = "no";
-        } else if (isOpen == DOOR_MIXED) {
-          response["door_state_open"] = "no";
-          response["door_state_closed"] = "no";
-          response["door_state_mixed"] = "yes";
-        } 
-        webSocketManager.notifyClients(COMM_VISIBILITY, response);      
+        sendDoorState(nullptr, doorNum, isOpen);
 
         if (isOpen == DOOR_OPEN || isOpen == DOOR_CLOSED) {
           BoxEventData event = {};
@@ -864,6 +864,8 @@ void loop() {
   // Keyboard events can start a timeout after the loop timestamp was sampled.
   currentMillis = millis();
   boxStateMachine.update(currentMillis);
+  // Observe actual GPIO state after timers and state transitions have run.
+  notifyAmbientChange();
   logger.update(currentMillis);
 
   webSocketManager.update(currentMillis);

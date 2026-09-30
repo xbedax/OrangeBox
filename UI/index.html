@@ -31,7 +31,8 @@
         #pinTable tr td:nth-child(3),
         #pinTable tr th:nth-child(3) {
         display: none;
-}
+		}
+		
         
  
     </style>
@@ -60,7 +61,7 @@
             <h2>Box control</h2>
 			<fieldset id="door_controls"> <! door controls inside only>
             <div class="grid">
-			    <button class="primary" data-target="modal-confirm" onclick="toggleModal('modal-confirm')">
+			    <button class="primary" data-operation="opendoor" data-target="modal-confirm" onclick="toggleModal('modal-confirm')">
                 <P style="font-size:3px">&nbsp;</P><P style="font-size:50px"><strong>O&nbsp;p&nbsp;e&nbsp;n&nbsp; &nbsp; &nbsp;B&nbsp;O&nbsp;X</strong></P><P style="font-size:3px">&nbsp;</P>
             </button>
 			</div>
@@ -243,7 +244,7 @@
             onclick="toggleModal('modal-confirm')"            
           >
             Cancel</button
-          ><button autofocus data-target="modal-confirm" id="buttonconfirm" onclick="submitModal(event)">
+          ><button autofocus data-operation="opendoor" data-target="modal-confirm" id="buttonconfirm" onclick="submitModal(event)">
             Confirm
           </button>
         </form>
@@ -328,7 +329,7 @@
                     aria-label="Date from"
                     autocomplete="date"
                     >
-                    <small>Pr?zdn? datum znamen? neomezenou platnost.</small>
+                    <small>Prázdné datum znamená neomezenou platnost.</small>
                   </div>
                   <div>
                     <label for="dateto">Not after</label>
@@ -340,7 +341,7 @@
                     aria-label="Date to"
                     autocomplete="date"
                     >
-                    <small>Pr?zdn? datum znamen? neomezenou platnost.</small>
+                    <small>Prázdné datum znamená neomezenou platnost.</small>
                   </div>
                 </div>
                 <!--<button type="submit">Subscribe</button>-->
@@ -382,7 +383,7 @@
                   </div>
                   <div>
                     <label for="codevalue">Code value</label>
-                    <input
+                    <input 
                     type="text"
                     maxlength="20"
                     id = "codevalue";
@@ -404,7 +405,7 @@
                     aria-label="Date from"
                     autocomplete="date"
                     >
-                    <small>Pr?zdn? datum znamen? neomezenou platnost.</small>
+                    <small>Prázdné datum znamená neomezenou platnost.</small>
                   </div>
                   <div>
                     <label for="codeto">Not after</label>
@@ -416,7 +417,7 @@
                     aria-label="Date to"
                     autocomplete="date"
                     >
-                    <small>Pr?zdn? datum znamen? neomezenou platnost.</small>
+                    <small>Prázdné datum znamená neomezenou platnost.</small>
                   </div>
                 </div>
                 <!--<button type="submit">Subscribe</button>-->
@@ -447,6 +448,8 @@
         const deadTimeout = 80;       //seconds from last messsage
         const unknownTimeout = 40;       //seconds from last messsage
         var boxClockDrift = 0;
+		var dooropenpermitted = 0;
+		var setcredpermitted = 0;
         const dateFormat = "YYYY-MM-DD hh:mm";
 		const credTypes = ["all", "ctPin", "ctCode"];
         const credPages = Object.create(null);
@@ -460,7 +463,7 @@
 			if ( currentDelay  > deadTimeout  ){
 			  newConnectionState = 0;
 			}
-			console.log("ConCheck: " + newConnectionState + " / " + lastContact);
+			//console.log("ConCheck: " + newConnectionState + " / " + lastContact);
 			if ( newConnectionState != lastConnectionState) {
 			  lastConnectionState = newConnectionState;
 			  for (let idx = 0; idx < connIds.length; idx++){
@@ -488,21 +491,57 @@
 				  }  
 				}
 			}
-			if ( command == "c_enordis") {
-				for (var i = 0; i < keys.length; i++){
-				  var key = keys[i];
-				  if ( myObj["data"][key] == 'disable') {
-					console.log("Disabling key: " + key);
-					document.getElementById(key).disabled = true;
-				  }else{
-					console.log("Enabling key: " + key);
-					document.getElementById(key).disabled = false;
-				  }  
-				}
+			if ( command == "c_ambientstate") {
+				console.log("Ambient state: " + myObj["data"]["state"]);
+				if ( myObj["data"]["state"] == 'on') {
+					document.getElementById('ambient_state_off').hidden = true;
+					document.getElementById('ambient_state_on').hidden = false;
+				}else{
+					document.getElementById('ambient_state_on').hidden = true;
+					document.getElementById('ambient_state_off').hidden = false;
+				}  
 			}
+			if ( command == "c_doorstate") {
+				console.log("Door state: " + myObj["data"]["door_num"] + " / " + myObj["data"]["state"]);
+				if ( myObj["data"]["state"] == 'open') {
+					document.getElementById('door_state_closed').hidden = true;
+					document.getElementById('door_state_open').hidden = false;
+				}else{
+					document.getElementById('door_state_open').hidden = true;
+					document.getElementById('door_state_closed').hidden = false;
+				}  
+			}
+
+            if (command === "c_enordis") {
+                const permission = myObj.data.opendoor;
+                if (permission === "disable" || permission === "open") {
+                    document.querySelectorAll('[data-operation="opendoor"]').forEach(button => {
+                        button.disabled = permission === "disable";
+                    });
+                }
+                return;
+            }
+            if (command === "c_diagnostics" || command === "c_diagnostic_snapshots") {
+                const targets = command === "c_diagnostics"
+                    ? {html: "diagnostics", text: "diagnostics_text", json: "diagnostics_json"}
+                    : {html: "diagnostic_snapshots", text: "diagnostic_snapshots_text",
+                       json: "diagnostic_snapshots_json", count: "diagnostic_snapshot_count"};
+                for (const [field, id] of Object.entries(targets)) {
+                    const element = document.getElementById(id);
+                    if (!element || !Object.prototype.hasOwnProperty.call(myObj.data, field)) continue;
+                    if (field === "html") element.innerHTML = myObj.data[field];
+                    else element.textContent = myObj.data[field];
+                }
+                return;
+            }
+            if (command == "c_lastresult") {
+                if (typeof myObj.data.lastresult === "string") {
+                    document.getElementById("lastresult").innerHTML = myObj.data.lastresult;
+                }
+                return;
+            }
 			if (command == "c_setcred") {
                 const payload = myObj.data;
-                if (payload.lastresult) document.getElementById("lastresult").textContent = payload.lastresult;
                 if (payload.success === false) return;
                 if (payload.changed) {
                     const page = credPages[payload.credType];

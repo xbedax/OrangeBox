@@ -213,8 +213,11 @@
 #define COMM_GET_AMBIENT "get_ambient"
 #define COMM_GET_CREDS "get_creds"
 #define COMM_OPEN_BOX "opendoor"
-#define COMM_VISIBILITY "c_visibility"
-#define COMM_CONTENT "c_content"
+#define COMM_DOOR_STATE "c_doorstate"
+#define COMM_AMBIENT_STATE "c_ambientstate"
+#define COMM_DIAGNOSTICS "c_diagnostics"
+#define COMM_DIAGNOSTIC_SNAPSHOTS "c_diagnostic_snapshots"
+#define COMM_LASTRESULT "c_lastresult"
 #define COMM_GET_DIAGNOSTICS "get_diagnostics"
 #define COMM_SNAPSHOT_DIAGNOSTICS "snapshot_diagnostics"
 #define COMM_GET_DIAGNOSTIC_SNAPSHOTS "get_diagnostic_snapshots"
@@ -233,19 +236,8 @@
 #define CRED_DELETE_BEACON "deletebutton"
 #define CRED_SAVE_BEACON "savebutton"
 
-#define AMBIENT_ON_BEACON "ambient_state_on"
-#define AMBIENT_OFF_BEACON "ambient_state_off"
 
-#define DOOR_OPEN_BEACON "door_state_open"
-#define DOOR_CLOSED_BEACON "door_state_closed"
-#define DOOR_MIXED_BEACON "door_state_mixed"
-#define DOOR_CONTROLS_BEACON "door_controls"
 
-#define STATE_NEGATIVE "no"
-#define STATE_POSITIVE "yes"
-
-#define DATE_TO_UNLIMITED 2147483647            // Timestamp for 2030-12-31, used to represent unlimited validity for pins
-#define DATE_FROM_UNLIMITED 1735689600          // Timestamp for 2025-01-01, used to represent unlimited validity for pins
 
 // Message strings for WebSocket communication
 
@@ -258,11 +250,10 @@
 #define MSG_DOORNUM "doornum"
 #define MSG_REMAINING "amount"
 #define MSG_LASTRESULT "lastresult"
-#define MSG_AMBIENTSTATE "ambient_state"
 #define MSG_PRESENCECODE "presence"
 #define MSG_CHECKPRESENCE "checkbox-presence"
 #define MSG_DISABLE "disable"
-#define MSG_ENABLE "enable"
+#define MSG_OPERATION_OPEN "open"
 #define MSG_CODEID "codeid"
 #define MSG_CODENAME "codename"
 #define MSG_CODEVALUE "codevalue"
