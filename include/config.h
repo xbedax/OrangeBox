@@ -1,6 +1,6 @@
 #pragma once
 
-#define _VERSION_ "1.01.d"
+#define _VERSION_ "1.01.f"
 #if __has_include("box_setup.h")
 #include "box_setup.h"
 #endif
@@ -97,6 +97,7 @@
 #define QR_SCANNER_SWITCH_ACTIVE_HIGH 1
 #endif
 #ifndef QR_SCANNER_ACTIVATE_COMMAND
+// Main firmware decodes these strings as hexadecimal bytes, not ASCII commands.
 #define QR_SCANNER_ACTIVATE_COMMAND "7E 00 08 01 00 02 01 AB CD"
 #endif
 #ifndef QR_SCANNER_DEACTIVATE_COMMAND
@@ -112,7 +113,7 @@
 #define QR_SCANNER_FRAME_IDLE_MS 40
 #endif
 #ifndef QR_SCANNER_SCAN_TIMEOUT_MS
-#define QR_SCANNER_SCAN_TIMEOUT_MS 30000
+#define QR_SCANNER_SCAN_TIMEOUT_MS 5000
 #endif
 #ifndef QR_SCANNER_STUB_CONSOLE_BAUD
 #define QR_SCANNER_STUB_CONSOLE_BAUD 9600
@@ -253,7 +254,7 @@
 #define MSG_PRESENCECODE "presence"
 #define MSG_CHECKPRESENCE "checkbox-presence"
 #define MSG_DISABLE "disable"
-#define MSG_OPERATION_OPEN "open"
+#define MSG_ENABLE "enable"
 #define MSG_CODEID "codeid"
 #define MSG_CODENAME "codename"
 #define MSG_CODEVALUE "codevalue"

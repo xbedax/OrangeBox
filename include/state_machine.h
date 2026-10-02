@@ -18,7 +18,8 @@ enum class BoxState {
     Open,           // Some door opened
     Closed,         // All doors closed, ambient and camera still running
     External,       // External command active
-    BadPass         // Waiting after bad password entered
+    BadPass,        // Waiting after bad password entered
+    Scan            // Waiting for a packet number from the scanner
 };
 
 /*
@@ -30,6 +31,7 @@ enum class BoxEventType {
     KeyboardKey2 = 101,         // Key 2 pressed - switch to presence mode (from HOME)
     KeyboardEnter = 102,        // Enter/# pressed - submit password
     KeyboardCancel = 103,       // Cancel/* pressed - go back to HOME
+    KeyboardKey3 = 104,         // Key 3 pressed - scan a packet number (from HOME)
     
     // Web/External events
     WebOpenBox = 200,           // Web request to open door
@@ -41,6 +43,10 @@ enum class BoxEventType {
     PresenceTimeout = 303,      // Presence code validity timeout
     AmbientTimeout = 304,       // Ambient light deactivation timeout
     DoorOpenTimeout = 305,      // Door opening attempt timeout
+    ScanTimeout = 306,
+
+    ScannerCodeReceived = 400,
+    ScannerFailed = 401,
     
     // Generic events
     Tick = 10,                  // Regular update tick
@@ -54,6 +60,9 @@ struct BoxEventData {
             char password[33];              // For KeyboardEnter
         } keyboardData;
         struct {
+            char cred[PACKET_NUMBER_MAX + 1];
+        } scannerData;
+        struct {
             uint8_t doorNum;                // For WebOpenBox and door sensor events
             uint8_t doorState;              // For DoorOpened/DoorClosed
         } doorData;
@@ -64,6 +73,8 @@ struct BoxStateContext {
     BoxState state;
     uint8_t doorToOpen;
     bool credVerified;
+    bool scannedCredVerified;
+    uint32_t scanStartedAt;
     uint8_t badPasswordCount;
     uint32_t doorOpenStartedAt;
     uint32_t passwordEntryStartedAt;
@@ -134,7 +145,8 @@ private:
     
     // Callback
     StateChangeCallback onStateChange;
-    UIUpdateCallback onUIUpdate;
+    UIUpdateCallback onUIUpdate = nullptr;
+    uint8_t lastUIAction = 0;
     
     // State transition logic
     void transitionTo(BoxState newState, unsigned long currentMillis);
@@ -144,12 +156,15 @@ private:
     void handleWebEvent(const BoxEventData& event, unsigned long currentMillis);
     void handleSensorEvent(const BoxEventData& event, unsigned long currentMillis);
     void handleTimerEvent(const BoxEventData& event, unsigned long currentMillis);
+    void handleScannerEvent(const BoxEventData& event, unsigned long currentMillis);
     
     // State entry/exit actions
     void onEnterHome(unsigned long currentMillis);
     void onExitHome();
     void onEnterPassword(unsigned long currentMillis);
     void onExitPassword();
+    void onEnterScan(unsigned long currentMillis);
+    void onExitScan();
     void onEnterPresence(unsigned long currentMillis);
     void onExitPresence();
     void onEnterOpening(unsigned long currentMillis);
@@ -176,5 +191,3 @@ private:
 };
 
 #endif // STATE_MACHINE_H
-
-        

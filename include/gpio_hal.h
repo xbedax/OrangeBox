@@ -67,7 +67,8 @@ public:
 
   void setAmbientPin(uint8_t pin); // Set the pin used for ambient light control
 
-  static void doorCallback(); // GPIO interrupt callback for door state changes
+  // Poll/debounce contacts from loop(); never schedule timers from an ISR.
+  void updateDoorStates(uint32_t now, void (*onChange)(uint8_t));
   void getOpenDoors(bool* openDoorsArray, uint8_t arraySize); // Get the list of currently open doors, e.g. for display purposes, fills the provided array with 1 for open and 0 for closed, up to the specified array size 
 
 private:
@@ -86,7 +87,8 @@ private:
   // Pulse duration for door lock
   static const unsigned long doorDelay;
   DoorMapping doorMappings[DOOR_COUNT]; // Example mapping for 20 doors
-  static GpioHAL* gpioHalPtr; // Static pointer to the GpioHAL instance for use in static callback
+  bool sampledDoorState[DOOR_COUNT] = {};
+  uint32_t doorSampleStartedAt[DOOR_COUNT] = {};
 
 };
 

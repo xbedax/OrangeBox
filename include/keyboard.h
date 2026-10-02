@@ -9,6 +9,7 @@
 
 #define KEYBOARD_KEY_1              1
 #define KEYBOARD_KEY_2              2
+#define KEYBOARD_KEY_3              3
 #define KEYBOARD_KEY_ENTER          0x0D        // #
 #define KEYBOARD_KEY_CANCEL         0x1B        // *
 

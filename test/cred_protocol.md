@@ -100,11 +100,16 @@ Only the UI maps these fields to DOM IDs; missing diagnostic elements are ignore
 Firmware no longer sends `c_content`.
 
 `c_enordis` addresses operations, not DOM IDs. Entering password entry sends
-`{"opendoor":"disable"}` in `data`; returning to Home sends `{"opendoor":"open"}`.
+`{"opendoor":"disable"}` in `data`; returning to Home sends `{"opendoor":"enable"}`.
 The existing disable notification during door opening uses the same operation key.
 The UI disables both the Open Box button and its confirmation button, including
 when the confirmation dialog is already open. Unknown operations and permission
 values are ignored. This does not introduce operation tickets or edit locks.
+Repeated identical permissions are suppressed. Web opening requests are queued
+by AsyncTCP and processed in `loop()`, so state entry cannot run concurrently
+with the state machine's timeout checks. Door contacts must stay stable for
+100 ms before their state is published; this temporary software debounce can
+be disabled with `DOOR_CONTACT_DEBOUNCE_MS = 0` once hardware debounce is fitted.
 
 The transport-independent
 credential handlers return lastresult internally; main.cpp extracts it into

@@ -514,9 +514,13 @@
 
             if (command === "c_enordis") {
                 const permission = myObj.data.opendoor;
-                if (permission === "disable" || permission === "open") {
+                if (permission === "disable" ) {
                     document.querySelectorAll('[data-operation="opendoor"]').forEach(button => {
-                        button.disabled = permission === "disable";
+                        button.disabled = true;
+                    });
+                }else {
+                    document.querySelectorAll('[data-operation="opendoor"]').forEach(button => {
+                        button.disabled = false;
                     });
                 }
                 return;

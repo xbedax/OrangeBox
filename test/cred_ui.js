@@ -82,12 +82,12 @@ try {
   const messageCount = testMessages.length;
   document.getElementById('buttonconfirm').click();
   check(testMessages.length === messageCount, 'disabled confirmation does not send open request');
-  handleMessage({_command_: 'c_enordis', data: {opendoor: 'enable', savebutton: 'disable'}});
+  handleMessage({_command_: 'c_enordis', data: {opendoor: 'open', savebutton: 'disable'}});
   check([...openButtons].every(button => button.disabled), 'unknown permission does not enable operation');
   check(!document.getElementById('savebutton').disabled, 'operation message does not target arbitrary DOM IDs');
   handleMessage({_command_: 'c_enordis', data: {}});
   check([...openButtons].every(button => button.disabled), 'missing permission preserves state');
-  handleMessage({_command_: 'c_enordis', data: {opendoor: 'open'}});
+  handleMessage({_command_: 'c_enordis', data: {opendoor: 'enable'}});
   check([...openButtons].every(button => !button.disabled), 'open permission enables both buttons');
 
   // Diagnostics are optional in the page; a response must also work without them.

@@ -1,6 +1,8 @@
 #include "config.h"
 #include "timeout.h"
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/queue.h>
 
 // Script state:
 //              single thread
@@ -29,6 +31,7 @@
 #include <WiFi.h>
 #include <time.h>
 #include <Wire.h>
+#include <HardwareSerial.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <ElegantOTA.h>
@@ -45,14 +48,15 @@
 #include "pass_store.h"
 #include "keyboard.h"
 #include "state_machine.h"
+#include "box_scanner.h"
 #include "logger.h"
 #include "websocket_log_transport.h"
 #include "vpn_manager.h"
 #include "box_rtc.h"
 #include "diagnostics.h"
 
-uint8_t doorStatePin[] = {3, 4, 5, 6};  // Door state input pins
-uint8_t doorLockPin[] = {0, 1, 2, 3};   // Door lock control pins
+//uint8_t doorStatePin[] = {3, 4, 5, 6};  // Door state input pins   - smazat
+//uint8_t doorLockPin[] = {0, 1, 2, 3};   // Door lock control pins  - smazat
 
 const char* fversion = "Bx 0.06";
 
@@ -79,6 +83,8 @@ bool ledState = 0;                              // actual state of door lock (0-
 //bool doorOpen = 0;                              // actual state of door switch (0-closed,1-open)
 JsonDocument dispChange;                        // Json Variable to Hold Sensor Readings
 unsigned long currentMillis;                    // current time timer
+// AsyncTCP submits requests; only loop() changes the state machine and GPIO.
+static QueueHandle_t webOpenRequests = nullptr;
 //unsigned long startMillis = 0;                  // push button timer ###VYHODIT
 //unsigned long switchTime = 0;                   // ###VYHODIT
 
@@ -108,13 +114,12 @@ CredStorage credStorage; // Credential storage instance
 BoxDisplay boxDisplay; // Box display instance
 BoxKeyboard boxKeyboard;
 BoxStateMachine boxStateMachine;
+BoxScanner boxScanner(boxStateMachine);
+HardwareSerial scannerUart(QR_SCANNER_UART_NUM);
 BoxRtc boxRtc;
 //CameraHandler cameraHandler; // Camera handler instance
-
-
 DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
 
-//  void processPassword();         ### asi smazat
 void handleDueActions(uint8_t action, const char* arg);
 void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis);
 void refreshVpnLocalHost();
@@ -134,8 +139,6 @@ void recordStartTime(const char* source) {
   lastStart.timeSource = source;
   lastStart.currentMillis = millis();
 }
-
-
 
 // Password handling variables
 uint8_t pass[PASS_MAX];
@@ -161,40 +164,18 @@ b<html>
       body {max-width: 600px; margin:0px auto; padding-bottom: 25px;}
       .content {display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px;}      
       .card { background-color: #F8F7F9;; box-shadow: 2px 2px 12px 1px rgba(100,100,110,.5); padding-top:10px; padding-bottom:20px; }
-      img { 
-            max-width: 100%; 
-            border: 3px solid #333;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-        }
-        .info {
-            margin-top: 20px;
-            color: #666;
-            font-size: 14px;
-        }
     </style>
 </head>
 <body>
   <div class="topnav">
     <h1>ORANGE Box</h1>
-    <P>%SCRIPTVER%</P>
+    <P>Nothing to see here</P>
   </div>
   <div class="content">
     <div class="card">
-      <h2>Locker 0 (GPIO 0)</h2>
       Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec vel sapien eget nunc luctus commodo. Sed at ligula quis sapien bibendum efficitur.
     </div>
 
- <script>
-//  var gateway;
- </script>
 </body>
 </html>
 )rawliteral";
@@ -390,14 +371,13 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
     }
     uint8_t num = static_cast<uint8_t>(lnum);
 
-    logger.logPrint(SEVERITY_INFO, "Opening box door number " + String(num), BOX_HOST_NAME, LOGAREA_ACCESS);
-    response[MSG_LASTRESULT] = "Opening door number " + String(num);
+    if (!webOpenRequests || xQueueSend(webOpenRequests, &num, 0) != pdTRUE) {
+      response[MSG_LASTRESULT] = "Error: Door request queue unavailable or full";
+    } else {
+      logger.logPrint(SEVERITY_INFO, "Opening box door number " + String(num), BOX_HOST_NAME, LOGAREA_ACCESS);
+      response[MSG_LASTRESULT] = "Opening door number " + String(num);
+    }
     webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
-    BoxEventData event = {};
-    event.eventType = BoxEventType::WebOpenBox;
-    event.data.doorData.doorNum = num;
-    event.data.doorData.doorState = 0;
-    boxStateMachine.processEvent(event);
   }
 }
 
@@ -564,7 +544,7 @@ void UIcontrolCallback(uint8_t action ) { /*const char* arg, AsyncWebSocketClien
     return;
   }
   if (action == UI_ENABLE_DOOR_CONTROLS) {
-    response[COMM_OPEN_BOX] = MSG_OPERATION_OPEN;
+    response[COMM_OPEN_BOX] = MSG_ENABLE;
     webSocketManager.notifyClients(COMM_ENORDIS, response);
     return;
   }
@@ -574,6 +554,7 @@ void UIcontrolCallback(uint8_t action ) { /*const char* arg, AsyncWebSocketClien
 /****************************/
 /****************************/
 void setup() {
+  webOpenRequests = xQueueCreate(4, sizeof(uint8_t));
   delay(3000); // Small delay to allow any pending operations to complete before starting Serial
   Serial.begin(9600);
   logger.begin(&webSocketLogTransport);
@@ -631,6 +612,10 @@ void setup() {
   keyboardState.passwordComplete = false;
   keyboardState.cancelPressed = false;
   logger.logPrint(SEVERITY_INFO, "--Keyboard initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  scannerUart.begin(QR_SCANNER_BAUD, SERIAL_8N1, QR_SCANNER_RX_PIN, QR_SCANNER_TX_PIN);
+  if (!boxScanner.begin(scannerUart)) {
+    logger.logPrint(SEVERITY_ERROR, "Scanner command configuration is invalid", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  }
   boxStateMachine.initialize();
   boxStateMachine.setStateChangeCallback(onStateChanged);
   boxStateMachine.setUIUpdateCallback(UIcontrolCallback);
@@ -755,6 +740,8 @@ void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentM
   } else {
     keyboardState.keyboardMode = KEYBOARD_MODE_COMMAND;
   }
+  // Last: a failed start can synchronously return the state machine to Home.
+  boxScanner.onStateChanged(oldState, newState);
 }
 
 void handleDueActions(uint8_t action, const char* arg) {
@@ -859,11 +846,24 @@ void loop() {
     credStorage.refreshCache();
     recordStartTime("NTP");
   }
-  timerManager.update(currentMillis);
+  uint8_t requestedDoor;
+  if (webOpenRequests && xQueueReceive(webOpenRequests, &requestedDoor, 0) == pdTRUE) {
+    BoxEventData event = {};
+    event.eventType = BoxEventType::WebOpenBox;
+    event.data.doorData.doorNum = requestedDoor;
+    boxStateMachine.processEvent(event);
+  }
+  gpioHal.updateDoorStates(millis(), [](uint8_t door) {
+    char arg[4];
+    snprintf(arg, sizeof(arg), "%u", door);
+    handleDueActions(NOTIFY_DOOR_CHANGE, arg);
+  });
+  timerManager.update(millis());
   boxKeyboard.handleKeyboard(&keyboardState, &boxStateMachine);
   // Keyboard events can start a timeout after the loop timestamp was sampled.
   currentMillis = millis();
   boxStateMachine.update(currentMillis);
+  boxScanner.update(millis());
   // Observe actual GPIO state after timers and state transitions have run.
   notifyAmbientChange();
   logger.update(currentMillis);

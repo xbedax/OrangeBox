@@ -27,6 +27,7 @@ BoxStateMachine::BoxStateMachine() : onStateChange(nullptr) {
 }
 
 void BoxStateMachine::initialize() {
+    lastUIAction = 0;
     unsigned long currentMillis = millis();
     context.state = BoxState::Home;
     context.doorToOpen = 0;
@@ -34,6 +35,8 @@ void BoxStateMachine::initialize() {
     context.badPasswordCount = 0;
     context.doorOpenStartedAt = 0;
     context.passwordEntryStartedAt = 0;
+    context.scanStartedAt = 0;
+    context.scannedCredVerified = false;
     context.badPasswordStartedAt = 0;
     context.presenceCodeStartedAt = 0;
     context.presenceCodeActive = false;
@@ -63,6 +66,7 @@ void BoxStateMachine::processEvent(const BoxEventData& event) {
     switch (event.eventType) {
         case BoxEventType::KeyboardKey1:
         case BoxEventType::KeyboardKey2:
+        case BoxEventType::KeyboardKey3:
         case BoxEventType::KeyboardEnter:
         case BoxEventType::KeyboardCancel:
             handleKeyboardEvent(event, currentMillis);
@@ -81,7 +85,13 @@ void BoxStateMachine::processEvent(const BoxEventData& event) {
         case BoxEventType::PresenceTimeout:
         case BoxEventType::AmbientTimeout:
         case BoxEventType::DoorOpenTimeout:
+        case BoxEventType::ScanTimeout:
             handleTimerEvent(event, currentMillis);
+            break;
+
+        case BoxEventType::ScannerCodeReceived:
+        case BoxEventType::ScannerFailed:
+            handleScannerEvent(event, currentMillis);
             break;
             
         default:
@@ -113,6 +123,12 @@ void BoxStateMachine::update(unsigned long currentMillis) {
             if (timeoutElapsed(context.passwordEntryStartedAt, context.currentPasswordEntryMillis, currentMillis)) {
                 transitionTo(BoxState::Home, currentMillis);
                 break;
+            }
+            break;
+
+        case BoxState::Scan:
+            if (timeoutElapsed(context.scanStartedAt, QR_SCANNER_SCAN_TIMEOUT_MS, currentMillis)) {
+                transitionTo(BoxState::Home, currentMillis);
             }
             break;
 
@@ -213,6 +229,12 @@ bool BoxStateMachine::refreshPeriodicDisplay(unsigned long currentMillis) {
             }
             return true;
 
+        case BoxState::Scan: {
+            const uint32_t remaining = timeoutRemaining(context.scanStartedAt, QR_SCANNER_SCAN_TIMEOUT_MS, currentMillis);
+            boxDisplay.setProgressBar(static_cast<uint8_t>((uint64_t(remaining) * 100) / QR_SCANNER_SCAN_TIMEOUT_MS));
+            return true;
+        }
+
         case BoxState::Presence:
             {
                 const uint32_t remaining = timeoutRemaining(context.presenceCodeStartedAt, PRESENCE_CODE_VALIDITY * 1000UL, currentMillis);
@@ -238,6 +260,9 @@ void BoxStateMachine::transitionTo(BoxState newState, unsigned long currentMilli
             break;
         case BoxState::Password:
             onExitPassword();
+            break;
+        case BoxState::Scan:
+            onExitScan();
             break;
         case BoxState::Presence:
             onExitPresence();
@@ -269,6 +294,9 @@ void BoxStateMachine::transitionTo(BoxState newState, unsigned long currentMilli
             break;
         case BoxState::Password:
             onEnterPassword(currentMillis);
+            break;
+        case BoxState::Scan:
+            onEnterScan(currentMillis);
             break;
         case BoxState::Presence:
             onEnterPresence(currentMillis);
@@ -313,6 +341,8 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
             } else if (event.eventType == BoxEventType::KeyboardKey2) {
                 // Switch to presence mode
                 transitionTo(BoxState::Presence, currentMillis);
+            } else if (event.eventType == BoxEventType::KeyboardKey3) {
+                transitionTo(BoxState::Scan, currentMillis);
             }
             break;
             
@@ -323,6 +353,7 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
                 if (context.doorToOpen != DOOR_UNKNOWN) {
                     // Valid PIN - transition to opening
                     context.credVerified = true;
+                    context.scannedCredVerified = false;
                     context.badPasswordCount = 0;
                     transitionTo(BoxState::Opening, currentMillis);
                 } else {
@@ -336,6 +367,7 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
             
         case BoxState::BadPass:
         case BoxState::Presence:
+        case BoxState::Scan:
             if (event.eventType == BoxEventType::KeyboardCancel) {
                 // Return to home
                 transitionTo(BoxState::Home, currentMillis);
@@ -348,11 +380,29 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
     }
 }
 
+void BoxStateMachine::handleScannerEvent(const BoxEventData& event, unsigned long currentMillis) {
+    if (context.state != BoxState::Scan) return;
+    if (event.eventType == BoxEventType::ScannerFailed
+        || timeoutElapsed(context.scanStartedAt, QR_SCANNER_SCAN_TIMEOUT_MS, currentMillis)) {
+        transitionTo(BoxState::Home, currentMillis);
+        return;
+    }
+    context.doorToOpen = credStorage.verifyCred(event.data.scannerData.cred, CredType::PacketNumber);
+    if (context.doorToOpen == DOOR_UNKNOWN) {
+        transitionTo(BoxState::Home, currentMillis);
+        return;
+    }
+    context.credVerified = true;
+    context.scannedCredVerified = true;
+    transitionTo(BoxState::Opening, currentMillis);
+}
+
 void BoxStateMachine::handleWebEvent(const BoxEventData& event, unsigned long currentMillis) {
     if (event.eventType == BoxEventType::WebOpenBox) {
         // Web request to open door
         context.doorToOpen = event.data.doorData.doorNum;
         context.credVerified = false;
+        context.scannedCredVerified = false;
         transitionTo(BoxState::Opening, currentMillis);
     }
 }
@@ -390,6 +440,10 @@ void BoxStateMachine::handleTimerEvent(const BoxEventData& event, unsigned long 
                 transitionTo(BoxState::Home, currentMillis);
             }
             break;
+
+        case BoxEventType::ScanTimeout:
+            if (context.state == BoxState::Scan) transitionTo(BoxState::Home, currentMillis);
+            break;
             
         case BoxEventType::PresenceTimeout:
             if (context.state == BoxState::Presence) {
@@ -422,6 +476,7 @@ void BoxStateMachine::onEnterHome(unsigned long currentMillis) {
     // TODO: When camera control is implemented, stop it on entry to Home as well.
     context.credVerified = false;
     enableExternal();
+    context.scannedCredVerified = false;
     boxDisplay.writeInfoLine(INFOLINE_HOME);            // INFOLINE_HOME
     boxDisplay.writeActionLine(ACTIONLINE_HOME);         // ACTIONLINE_HOME
     boxDisplay.writeResponseLine(RESPONSELINE_HOME);       // RESPONSELINE_HOME
@@ -448,6 +503,21 @@ void BoxStateMachine::onEnterPassword(unsigned long currentMillis) {
 void BoxStateMachine::onExitPassword() {
     context.passwordEntryStartedAt = 0;
     context.currentPasswordEntryMillis = 0;
+}
+
+void BoxStateMachine::onEnterScan(unsigned long currentMillis) {
+    static_assert(QR_SCANNER_SCAN_TIMEOUT_MS > 0, "Scanning must have a finite timeout");
+    disableExternal();
+    context.scanStartedAt = currentMillis;
+    context.credVerified = false;
+    context.scannedCredVerified = false;
+    boxDisplay.writeInfoLine(INFOLINE_CANCEL);
+    boxDisplay.writeActionLine(ACTIONLINE_SCAN);
+    boxDisplay.setProgressBar(100);
+}
+
+void BoxStateMachine::onExitScan() {
+    context.scanStartedAt = 0;
 }
 
 void BoxStateMachine::onEnterPresence(unsigned long currentMillis) {
@@ -482,10 +552,15 @@ void BoxStateMachine::onExitOpening() {
 }
 
 void BoxStateMachine::onEnterOpen(unsigned long currentMillis) {
-    if (context.credVerified && !credStorage.usedCred(context.doorToOpen)) {
+    bool consumeCred = context.credVerified;
+#ifdef QR_SCANNER_TEST_KEEP_CRED
+    if (context.scannedCredVerified) consumeCred = false;
+#endif
+    if (consumeCred && !credStorage.usedCred(context.doorToOpen)) {
         logger.logPrint(SEVERITY_ERROR, "Error - verified credential for door " + String(context.doorToOpen) + " could not be consumed", BOX_HOST_NAME, LOGAREA_ACCESS);
     }
     context.credVerified = false;
+    context.scannedCredVerified = false;
     boxDisplay.writeActionLine(ACTIONLINE_CLOSE);         // ACTIONLINE_CLOSE
     boxDisplay.writeInfoLine(INFOLINE_EMPTY);            // INFOLINE_EMPTY
     boxDisplay.writeResponseLine(RESPONSELINE_EMPTY);        // RESPONSELINE_EMPTY
@@ -582,14 +657,16 @@ bool BoxStateMachine::areAllDoorsClosed() const {
 //
 void BoxStateMachine::enableExternal() {
     // Reserved for future websocket UI synchronization.
-    if(onUIUpdate) {
+    if(onUIUpdate && lastUIAction != UI_ENABLE_DOOR_CONTROLS) {
+        lastUIAction = UI_ENABLE_DOOR_CONTROLS;
         onUIUpdate(UI_ENABLE_DOOR_CONTROLS);
     }
 }
 
 // Disables external commands, e.g. when the box is in a state where it should not be controlled externally (like during door opening).
 void BoxStateMachine::disableExternal() {
-    if(onUIUpdate) {
+    if(onUIUpdate && lastUIAction != UI_DISABLE_DOOR_CONTROLS) {
+        lastUIAction = UI_DISABLE_DOOR_CONTROLS;
         onUIUpdate(UI_DISABLE_DOOR_CONTROLS);
     }
 }

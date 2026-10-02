@@ -18,7 +18,8 @@ static uint8_t progress;
 static bool ambient;
 static bool openingSucceeds = true;
 static uint8_t lastUIAction;
-static void recordUIAction(uint8_t action) { lastUIAction = action; }
+static unsigned uiActionCount;
+static void recordUIAction(uint8_t action) { lastUIAction = action; ++uiActionCount; }
 void BoxDisplay::setOpenDoorList() {}
 void BoxDisplay::writeStatusLine() {}
 void BoxDisplay::writeInfoLine(uint8_t) {}
@@ -83,6 +84,7 @@ int main()
 
         machine.initialize();
         event(machine, BoxEventType::KeyboardKey1);
+        const unsigned beforeBadPassword = uiActionCount;
         BoxEventData badPin = {};
         badPin.eventType = BoxEventType::KeyboardEnter;
         strcpy(badPin.data.keyboardData.password, "9999");
@@ -96,6 +98,8 @@ int main()
         assert(machine.getCurrentState() == BoxState::BadPass);
         tick(machine, start + penalty);
         assert(machine.getCurrentState() == BoxState::Password);
+        // Cancel re-enables Home, Key1 disables again; BadPass -> Password adds nothing.
+        assert(uiActionCount == beforeBadPassword + 2);
 
         testStubMillis = start;
         machine.initialize();
@@ -115,7 +119,10 @@ int main()
 
         testStubMillis = start;
         machine.initialize();
+        event(machine, BoxEventType::KeyboardKey1);
+        const unsigned beforeOpening = uiActionCount;
         event(machine, BoxEventType::WebOpenBox);
+        assert(uiActionCount == beforeOpening); // Already disabled while entering the password.
         event(machine, BoxEventType::DoorOpened);
         event(machine, BoxEventType::DoorClosed);
         assert(ambient);
@@ -124,6 +131,27 @@ int main()
         tick(machine, start + AMBIENT_TIMEOUT);
         assert(machine.getCurrentState() == BoxState::Home && !ambient);
     }
+    // Web request from Home: the first loop update must keep the light on until
+    // the door opens, then closing starts the normal delayed return to Home.
+    testStubMillis = 100;
+    BoxStateMachine webMachine;
+    webMachine.setUIUpdateCallback(recordUIAction);
+    webMachine.initialize();
+    const unsigned beforeWebOpen = uiActionCount;
+    event(webMachine, BoxEventType::WebOpenBox, 0);
+    tick(webMachine, 101);
+    assert(webMachine.getCurrentState() == BoxState::Opening && ambient);
+    assert(uiActionCount == beforeWebOpen + 1 && lastUIAction == UI_DISABLE_DOOR_CONTROLS);
+    event(webMachine, BoxEventType::DoorOpened, 0);
+    tick(webMachine, 100 + DOOR_OPENING_TIMEOUT + 10);
+    assert(webMachine.getCurrentState() == BoxState::Open && ambient);
+    event(webMachine, BoxEventType::DoorClosed, 0);
+    const uint32_t closedAt = testStubMillis;
+    tick(webMachine, closedAt + AMBIENT_TIMEOUT - 1);
+    assert(webMachine.getCurrentState() == BoxState::Closed && ambient);
+    tick(webMachine, closedAt + AMBIENT_TIMEOUT);
+    assert(webMachine.getCurrentState() == BoxState::Home && !ambient);
+    assert(uiActionCount == beforeWebOpen + 2 && lastUIAction == UI_ENABLE_DOOR_CONTROLS);
     testStubMillis = 0;
     BoxStateMachine machine;
         machine.setUIUpdateCallback(nullptr);

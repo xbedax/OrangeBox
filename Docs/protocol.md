@@ -50,7 +50,7 @@ Examples currently used include:
 - `lastresult`
 - diagnostic element IDs when present in a UI
 
-$$$ Mělo by být odstraněno. Až poladíme protokol, nechám pročistit headery. $$$
+$$$ Mělo by být odstraněno. Až potestujeme protokol, nechám pročistit headery. $$$
 
 ## 3. Transport
 
@@ -59,7 +59,7 @@ The current UI and production box communicate using **WebSocket + JSON**.
 Current firmware creates an `AsyncWebSocket` on path `/`. The current UI normally derives the WebSocket URL from the page hostname, but the supplied development snapshot overrides it with:
 
 ```text
-ws://127.0.0.1:8080
+ws://127.0.0.1:8080     $$$ to proto že tenhle override se používá při ladění na stanici, až když se nahrává ne server se zakomentuje (do a commit se dělá na stanici) $$$
 ```
 
 The Perl mock controller listens on a configurable WebSocket TCP port, default `8080`.
@@ -144,6 +144,8 @@ $$$ tohle by mělo být pořešeno, mock, controller i UI by měly používat v�
 | `_ping_` | yes | yes | yes | Application-level watchdog request |
 | `c_log` | separate log transport | not handled by current UI | no | Same envelope, different destination/use |
 
+$$$ c_content je úplně odstraněno, stejně c_visibility (jejich ponechaná obsluha ve firmware je jen pro jistotu, odstraním hned jak se ukáže, že se nevolají),c_enordis je parciálně implementováno viz naše diskuse v chatu $$$
+
 ## 6. Generic UI-control commands
 
 These commands deliberately address HTML element IDs. They are not domain-specific responses.
@@ -214,7 +216,7 @@ Ambient-state beacons:
 - `ambient_state_on`
 - `ambient_state_off`
 
-### 6.3 `c_enordis`
+### 6.3 `c_enordis` $$$  připomínám můj popis v chatu $$$
 
 **Direction:** Box → UI
 
@@ -333,7 +335,7 @@ Response:
 
 This is the production predecessor of generic `get_creds`.
 
-### 7.3 PIN edit: `set_pin`
+### 7.3 PIN edit: `set_pin` $$$ set_creds $$$
 
 **Direction:** UI → Box/controller
 
@@ -403,7 +405,7 @@ After successful production PIN data change, firmware currently broadcasts an up
 
 A source comment explicitly says this broad table broadcast is temporary and should later become an update-notification mechanism so each UI can request the page it currently displays.
 
-### 7.4 Code edit: `set_code`
+### 7.4 Code edit: `set_code` $$$ set_creds $$$
 
 **Direction:** UI → controller  
 **Current implementation:** UI + Perl mock; not yet production firmware.
@@ -550,7 +552,7 @@ Current UI sends:
 }
 ```
 
-Production firmware currently ignores request data and returns global/current ambient state via `c_visibility`:
+Production firmware currently ignores request data and returns global/current ambient state via `c_visibility`: $$$ c_ambientstate $$$
 
 ```json
 {
@@ -661,7 +663,7 @@ Response via `c_content`:
 
 Stores a diagnostic snapshot.
 
-Response via `c_content`:
+Response via `c_content`: $$$ c_diagnostics $$$
 
 - `lastresult`
 - `diagnostic_snapshot_count`
@@ -757,6 +759,8 @@ The supplied current UI calls these functions when the page loads:
 6. `getStatusContent()` → `get_status`
 7. installs row handlers for PIN and code tables
 
+$$$ sem ještě přijde zjištění stavu dynamicky povolovaných / zakazovaných částí ovládání / funkcí  až to bude implementováno $$$
+
 This means the current UI expects generic `get_creds` even though the production firmware snapshot still implements `get_pins` instead.
 
 ## 17. Known inconsistencies / unfinished edges
@@ -772,7 +776,7 @@ Target appears to be generic retrieval with concrete edit commands, unless later
 
 ### 17.2 `get_PinInfo`
 
-Defined in `config.h`, but no registered production handler was found.
+Defined in `config.h`, but no registered production handler was found. $$$ přijde smazat při globálním úklidu config.h $$$
 
 ### 17.3 `get_status`
 
@@ -781,12 +785,14 @@ Sent by current UI; no production/mock handler found.
 ### 17.4 Door mixed state
 
 Firmware supports `DOOR_MIXED` and `door_state_mixed`, but current UI does not. Firmware temporarily represents mixed as open in the UI response.
+$$$ reálně se bude používat až bude dokončeno ukládání konfigurace na controlleru a editace dveří v UI $$$
 
 ### 17.5 Timestamp mismatch
 
 - UI: `_timestamp_` = epoch ms
 - production firmware: `_timestamp_` = boot-relative ms
 - Perl mock: `timestamp` = epoch seconds
+$$$ mělo by být vyřešeno $$$
 
 ### 17.6 `_scope_`
 
@@ -832,15 +838,15 @@ $$$ Tohle projdi pořádně, refaktor by měl být hotový, FW uz umí spravovat
 The following decisions are not resolved by the supplied implementation and should be made explicitly before considering this document a stable protocol specification:
 
 - canonical timestamp field and time base $$$ pořešeno $$$
-- formal semantics of `_scope_` 
-- final credential paging contract (`credId`, `credCount`, ordering, return count, end-of-list indication)
-- whether credential table responses remain HTML fragments or become structured records rendered by the UI
-- notification format for credential-list changes
+- formal semantics of `_scope_` $$$ odloženo $$$
+- final credential paging contract (`credId`, `credCount`, ordering, return count, end-of-list indication) $$$ plánováno po dokončení integrace čtečky$$$
+- whether credential table responses remain HTML fragments or become structured records rendered by the UI $$$ vyřešeno, posílá se tabulka dat, ne html fragment, renderování html zajišťuje UI $$$
+- notification format for credential-list changes $$$ plánováno, implementace společně se stránkováním $$$
 - production storage/handler design for `ctCode` / `set_code` $$$ pořešeno $$$
-- intended meaning and response for `get_status`
+- intended meaning and response for `get_status` $$$ tohle se přerodí v načtení stavu povolených / zakázaných operací $$$
 - how door number `0` is interpreted in the final multi-door model $$$ tady nevím, kam míříš, dveře 0 jsou prostě první dveře, speciální význam má jen 255 - unknown, logické dveře jsou stejné s fyzickými, pokud nedojde ke spojení, číslo spojených dveří se musí vejít mezi poslední číslo fyzických dveří a 254, protože protokol nerozlišuje fyzické a logické dveře, de facto pracuje jen s logickými dveřmi $$$
 - UI representation of `DOOR_MIXED` $$$ tohle musí počkat, řešení tohodle musí předcházet hluboká orba v UI (tlačítko pro každé dveře, editor dveří) i v controlleru, tam zase úplně chybí ukládání konfigurace $$$
-- whether `c_content`, `c_visibility`, `c_enordis` remain the long-term UI API or become an intermediate compatibility layer $$$ tohle všechno jsou kandidáti na odstřel, byl to nejrychlejší způsob jak docílit funkčního html UI, ale je to krajně nevhodné pro implementaci nativní aplikace pro mobily: ambinet a door už namísto c_visibility používá specifické příkazy c_ambientstate a c_doorstate, pro přenos tabulek se namísto c_content používá c_setcred - vše čisté Json zprávy. c_enordis zůstane zachován jako  identifikátor příkazu, ale změní se obsah, sekce data bude obsahovat jen identfikátory funkčních celků UI a cílový stav door_controls:disable  cred_changes:enabled .... Vznikne nový příkaz c_setlaststatus. Obecně je cílem oddělit controller od konkrkétní html reprezentace. $$$
+- whether `c_content`, `c_visibility`, `c_enordis` remain the long-term UI API or become an intermediate compatibility layer $$$ tohle všechno jsou kandidáti na odstřel, byl to nejrychlejší způsob jak docílit funkčního html UI, ale je to krajně nevhodné pro implementaci nativní aplikace pro mobily: ambinet a door už namísto c_visibility používá specifické příkazy c_ambientstate a c_doorstate, pro přenos tabulek se namísto c_content používá c_setcred - vše čisté Json zprávy. c_enordis zůstane zachován jako  identifikátor příkazu, ale mění se obsah, sekce data bude obsahovat jen identfikátory funkčních celků UI a cílový stav door_controls:disable  cred_changes:enabled .... viz diskuse v chatu. Vznikne nový příkaz c_setlaststatus. Obecně je cílem oddělit controller od konkrkétní html reprezentace, což . $$$
 
 ---
 

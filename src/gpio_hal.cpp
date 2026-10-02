@@ -1,18 +1,13 @@
 #include "gpio_hal.h"
 #include <Arduino.h>
 #include "timer.h"
+#include "timeout.h"
 
-/*
-This file implements the GPIO hardware abstraction layer for the box prototype. It defines the GpioHAL class which provides methods to interact with the door locks, read door states, control ambient light, and manage door mappings. The class also includes a static callback method for handling GPIO interrupts when door states change, allowing for real-time notifications to clients about door state changes. The implementation uses the TimerManager to schedule future tasks such as deactivating locks after a delay or notifying clients of state changes.
-
-ToDo: - Implement ambientOn, ambientOff, and getAmbient methods based on the specific hardware setup for ambient light control and sensing.
-      - Ensure that the doorCallback method correctly identifies which door's state has changed and schedules notifications accordingly, especially in cases of door combinations.
-      - Consider thread safety if the GPIO state can be accessed from multiple contexts (e.g., main loop and interrupt).
-      - Add error handling and validation for door numbers and mappings to prevent invalid access.
-      - Store Mapping to persistent storage if needed, and load it during initialization.
-*/
-
-GpioHAL* GpioHAL::gpioHalPtr = nullptr; // Global pointer to GpioHAL instance for use in static callback
+// Door contacts are sampled and debounced in loop(), together with state transitions.
+// TEMPORARY SOFTWARE DEBOUNCE: the current lock limit switches can bounce.
+// TODO(hardware revision): once the PCB has a hardware debouncer, set this to 0
+// to disable the software delay. Keep change detection and loop-only processing.
+static constexpr uint32_t DOOR_CONTACT_DEBOUNCE_MS = 100;
 uint8_t GpioHAL::ambientPin = 0; // Example pin for ambient light control, adjust as needed
 
 uint8_t GpioHAL::openDoor(uint8_t doorNum) {
@@ -39,8 +34,7 @@ uint8_t GpioHAL::readDoorState(uint8_t doorNum) {
   Serial.println("Reading state for logical door number: " + String(doorNum)); //###
   for (uint8_t i = 0; i < activeDoorNum; i++) {
     if (doorMappings[i].logDoorNum == doorNum && doorMappings[i].statePin != INVALID_PIN) { // Check if the door mapping matches the requested logical door number and has a valid state pin
-      uint8_t readState = digitalRead(doorMappings[i].statePin);
-      doorMappings[i].lastState = readState;                    // Update the last known state of the door for change detection and door state requests speedup, so we don't have to read the pin again if we already know the state from the last read
+      uint8_t readState = doorMappings[i].lastState;
       if (doorState == DOOR_UNKNOWN) {
           doorState = readState == HIGH ? DOOR_OPEN : DOOR_CLOSED;
       } else if (doorState != (readState == HIGH ? DOOR_OPEN : DOOR_CLOSED)) {
@@ -77,21 +71,27 @@ uint8_t GpioHAL::getLogDoorMapping(uint8_t index) {
   return DOOR_UNKNOWN; // Invalid index
 } // getLogDoorMapping  
 
-// GPIO interrupt callback for door state changes -> plans notification of all clients about the change, ideally with the new state of the door, but at least with the information that something changed and clients should update their state by requesting it from the server
-// STATIC method, so it can be used as an interrupt callback, but it uses the global pointer to the GpioHAL instance to access the door mappings and timer manager for scheduling notifications. It checks all doors that match the logDoorNum of the changed door for their state, and if any of them have a different state, it considers it a mixed state. It then schedules a notification to clients with the new state of the door combination.
-void ARDUINO_ISR_ATTR GpioHAL::doorCallback() {
-    if (!gpioHalPtr) {
-        return;
+void GpioHAL::updateDoorStates(uint32_t now, void (*onChange)(uint8_t)) {
+  bool changed[256] = {};
+  for (uint8_t i = 0; i < activeDoorNum; ++i) {
+    if (doorMappings[i].statePin == INVALID_PIN) continue;
+    const bool sample = digitalRead(doorMappings[i].statePin) == HIGH;
+    if (sample != sampledDoorState[i]) {
+      sampledDoorState[i] = sample;
+      doorSampleStartedAt[i] = now;
     }
-    for (uint8_t i = 0; i < gpioHalPtr->activeDoorNum; i++) {
-        if (gpioHalPtr->doorMappings[i].statePin != INVALID_PIN) {
-            uint8_t currentState = digitalRead(gpioHalPtr->doorMappings[i].statePin);
-            if (currentState != gpioHalPtr->doorMappings[i].lastState) {
-                gpioHalPtr->doorMappings[i].lastState = currentState;
-                gpioHalPtr->timerManager->scheduleOnce(100, NOTIFY_DOOR_CHANGE, String(gpioHalPtr->doorMappings[i].logDoorNum).c_str());
-            }
-        }
+    if (sample != doorMappings[i].lastState &&
+        timeoutElapsed(doorSampleStartedAt[i], DOOR_CONTACT_DEBOUNCE_MS, now)) {
+      doorMappings[i].lastState = sample;
+      changed[doorMappings[i].logDoorNum] = true;
     }
+  }
+  // Coalesce physical contacts belonging to the same logical door.
+  if (onChange) {
+    for (unsigned door = 0; door < DOOR_UNKNOWN; ++door) {
+      if (changed[door]) onChange(static_cast<uint8_t>(door));
+    }
+  }
 }
 
 uint8_t GpioHAL::lockDeactivate(uint8_t doorNum) {
@@ -176,7 +176,6 @@ void GpioHAL::removeDoorMapping(uint8_t index) {
 } // removeDoorMapping
 
 void GpioHAL::initializeGpioHAL(TimerManager* timerManager, DoorMapping* initialMappings, uint8_t ambientPin, uint8_t mappingSize) {
-  gpioHalPtr = this; // Set the global pointer to this instance
   // Initialize GPIO pins based on doorMappings and ambientPin
   activeDoorNum = initialMappings != nullptr ? min(mappingSize, (uint8_t)DOOR_COUNT) : 0;
   for (uint8_t i = 0; i < DOOR_COUNT; i++) {
@@ -214,11 +213,9 @@ void GpioHAL::initializeGpioHAL(TimerManager* timerManager, DoorMapping* initial
     Serial.print("Door " + String(i) + " (LogDoorNum: " + String(doorMappings[i].logDoorNum) + ") - State Pin: " + String(doorMappings[i].statePin) + ", Last State: " + String(doorMappings[i].lastState)); //###
   } 
   
-  for (size_t i = 0; i < activeDoorNum; i++)
-  { 
-    if (doorMappings[i].statePin != INVALID_PIN) { // If the state pin is valid, attach interrupt for change detection
-      attachInterrupt(doorMappings[i].statePin, GpioHAL::doorCallback, CHANGE); // Attach interrupt to each door state pin
-    }
+  for (uint8_t i = 0; i < activeDoorNum; ++i) {
+    sampledDoorState[i] = doorMappings[i].lastState;
+    doorSampleStartedAt[i] = millis();
   }
 
 } // initialize

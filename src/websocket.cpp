@@ -5,6 +5,7 @@
 #include <ESPAsyncWebServer.h>
 #include <time.h>
 #include <functional>
+#include <timeout.h>
 #include "logger.h"
 
 
@@ -178,10 +179,12 @@ void WebSocketManager::handleWatchdogResponse(AsyncWebSocketClient* client, Json
 void WebSocketManager::cleanupConnections() {
   unsigned long currentTime = millis();
   for (int i = 0; i < freeWatchdogEntry; i++) {
-    if (watchDogEntries[i].active && (currentTime - watchDogEntries[i].lastPongTime > watchdogFeedInterval)) {
-      Serial.printf("Client #%u timed out, closing connection\n", watchDogEntries[i].clientId->id());
-      watchDogEntries[i].clientId->close();
-      watchdogRemoveEntryIdx(i);
+    if (watchDogEntries[i].active) {
+      if (timeoutElapsed (watchDogEntries[i].lastPongTime, watchdogFeedInterval, currentTime)) {
+        Serial.printf("Client #%u timed out, closing connection\n", watchDogEntries[i].clientId->id());
+        watchDogEntries[i].clientId->close();
+        watchdogRemoveEntryIdx(i);
+      }
     }
   }
 }

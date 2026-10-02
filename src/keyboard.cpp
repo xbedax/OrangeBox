@@ -153,6 +153,13 @@ void BoxKeyboard::handleKeyboard(keyboardStatus *keyboardState, BoxStateMachine 
       keyboardState->currentKey = ' ';
       return;
     }
+    if (keyboardState->currentKey == KEYBOARD_KEY_3) {
+      BoxEventData event = {};
+      event.eventType = BoxEventType::KeyboardKey3;
+      stateMachine->processEvent(event);
+      keyboardState->currentKey = ' ';
+      return;
+    }
   }
 
   if (state == BoxState::Password) {
@@ -179,7 +186,7 @@ void BoxKeyboard::handleKeyboard(keyboardStatus *keyboardState, BoxStateMachine 
     }
   }
 
-  if (state == BoxState::BadPass || state == BoxState::Presence) {
+  if (state == BoxState::BadPass || state == BoxState::Presence || state == BoxState::Scan) {
     if (keyboardState->currentKey == KEYBOARD_KEY_CANCEL || keyboardState->cancelPressed) {
       BoxEventData event = {};
       event.eventType = BoxEventType::KeyboardCancel;
