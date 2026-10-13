@@ -48,7 +48,6 @@ void BoxKeyboard::handleKey(uint8_t k, keyboardStatus *keyboardState) {
       keyboardState->currentPassword[keyboardState->currentPasswordLen] = '\0';
       keyboardState->passwordComplete = true;
     }
-    //### heslo je zadano, zpracovat - asi nejaky callback do mainu, ktery se postara o validaci a akci
     return;
   }
 } // handleKey

@@ -17,6 +17,64 @@ static LCDI2C_Latin lcd1(LCD_ADDRESS, LCD_WIDTH, LCD_HEIGHT);  // I2C address: 0
 
 extern const char* fversion;
 
+static constexpr int TEXT_LINE_COUNT = 16;   // matches ACTIONLINE_*/RESPONSELINE_* count
+static constexpr  char const* langDisplayText[][TEXT_LINE_COUNT] = {
+    {
+        " 1-Pin 2-code 3-scan",
+        " *-backspace #-enter",
+        " *-cancel           ",
+        "                    ",
+        " Password: ",
+        "    Please wait!    ",
+        "   Close the door!  ",
+        "  Verification: ",
+        "",
+        "     Thank you!     ",
+        "  Scan the package. ",
+        "OPENING",
+        "BAD PASSWORD",
+        "REMAINING: ",
+        _VERSION_,
+        "                    "
+    },
+    {
+        " 1-Pin 2-kód 3-sken ",
+        "*-oprava #-potvrzení",
+        "*-zpět              ",
+        "                    ",
+        "   Heslo: ",
+        "      Čekejte!      ",
+        "   Zavřete dveře!   ",
+        "   Ověření: ",
+        "",
+        "      Děkujeme!     ",
+        "  Naskenujte balík. ",
+        "OTEVÍRÁM",
+        "ŠPATNÉ HESLO",
+        "ZBÝVÁ: ",
+        _VERSION_,
+        "                    "
+    }
+    ,{
+        " 1-Pin 2-Code 3-Scan",
+        " *-Rückt, #-Eingabet",
+        " *-Abbrechen        ",
+        "                    ",
+        " Passwort: ",
+        "    Bitte warten!    ",
+        " Schließen die Tür!  ",
+        "  Überprüfung: ",
+        "",
+        "     Vielen Dank!    ",
+        "  Scannen das Paket  ",
+        "ÖFFNEN",
+        "FALSCHES PASSWORT",
+        "VERBLEIBEND: ",
+        _VERSION_,
+        "                    "
+    }
+};
+constexpr int DISPLAY_LANG_COUNT = sizeof(langDisplayText) / sizeof(langDisplayText[0]);
 
 String BoxDisplay::centerLine(String text) {
   uint8_t paddLen = 0;
@@ -84,7 +142,7 @@ void BoxDisplay::writeStatusLine () {
 #endif
 } // writeStatusLine
 
-void BoxDisplay::writeActionLine (uint8_t actionType) {
+void BoxDisplay::writeActionLine (DisplayText actionType) {
   char actionLineBuff[DISP_WIDTH + 1]; // Buffer to hold the entire action line
   uint8_t actionLineIdx = 0;
   if (actionType >= ACTIONIDX_MAX) {
@@ -95,8 +153,8 @@ void BoxDisplay::writeActionLine (uint8_t actionType) {
   actionLineBuff[DISP_WIDTH] = '\0';
   #ifdef DISP_LCD
   lcd1.setCursor(0, ACTION_LINE_IDX);
-  actionLineIdx = min((uint8_t)strlen(actionTypes[actionType]), (uint8_t)DISP_WIDTH);
-  memcpy(actionLineBuff, actionTypes[actionType], actionLineIdx);
+  actionLineIdx = min((uint8_t)strlen(displayText[actionType]), (uint8_t)DISP_WIDTH);
+  memcpy(actionLineBuff, displayText[actionType], actionLineIdx);
   #endif
   switch (actionType) {
     case ACTIONLINE_HOME:
@@ -152,21 +210,21 @@ void BoxDisplay::writeActionLine (uint8_t actionType) {
   }
 } // writeActionLine
 
-void BoxDisplay::writeInfoLine (uint8_t infoType) {
+void BoxDisplay::writeInfoLine (DisplayText infoType) {
     // Update the infoline as needed
     // Usualy used to display static helper text
 
-  if (infoType >= INFOIDX_MAX) {
+  if (infoType >= RESPONSEIDX_MAX) {
   logger.logPrint(SEVERITY_ERROR, "Invalid infoType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
   return;
   }
 #ifdef DISP_LCD
     lcd1.setCursor(0, INFO_LINE_IDX);
-    lcd1.print(infoTypes[infoType]);
+    lcd1.print(displayText[infoType]);
 #endif
 } //writeInfoLine
 
-void BoxDisplay::writeResponseLine (uint8_t responseType) {
+void BoxDisplay::writeResponseLine (DisplayText responseType) {
   if (responseType >= RESPONSEIDX_MAX) {
     logger.logPrint(SEVERITY_ERROR, "Invalid responseType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
     return;
@@ -191,7 +249,7 @@ void BoxDisplay::writeResponseLine (uint8_t responseType) {
 
  #ifdef DISP_LCD
     lcd1.setCursor(0, RESPONSE_LINE_IDX);
-    lcd1.print(centerLine(responseTypes[responseType]));
+    lcd1.print(centerLine(displayText[responseType]));
 #endif
 
 }
@@ -247,10 +305,17 @@ void BoxDisplay::setProgressBar (uint8_t expirationProgress) {
     writeResponseLine(RESPONSELINE_PROGRESS);
 }
 
+void BoxDisplay::setDisplayLanguage(int lang) {
+  constexpr int DISPLAY_LANG_COUNT = sizeof(langDisplayText) / sizeof(langDisplayText[0]);
+  if (lang < 0 || lang >= DISPLAY_LANG_COUNT) {
+      lang = LANG_EN;   // fall back on bad/missing config
+  }
+  displayText = langDisplayText[lang];
+}
+
 void BoxDisplay::displayInit(GpioHAL* gpioHal) {
-    gpioHAL = gpioHal; // Store the pointer to the GPIO HAL for later use in display updates
-
-
+  gpioHAL = gpioHal; // Store the pointer to the GPIO HAL for later use in display updates
+  displayText = langDisplayText[DISP_LANG];
 #ifdef DISP_LCD
   Serial.println("Initializing LCD display...");
   lcd1.init();
@@ -259,6 +324,4 @@ void BoxDisplay::displayInit(GpioHAL* gpioHal) {
   lcd1.println("OrangeBOX");
 #endif
 }
-
-
 

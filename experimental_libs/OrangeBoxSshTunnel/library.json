@@ -1,0 +1,22 @@
+{
+  "name": "OrangeBoxSshTunnel",
+  "version": "2.2.1-orangebox.1",
+  "keywords": "esp32, arduino, ssh, tunnel, reverse, direct, libssh2, orangebox",
+  "description": "OrangeBox fork of ESP reverse SSH tunneling with direct TCP channel support.",
+  "license": "MIT",
+  "dependencies": {
+    "OrangeBoxLibssh2Esp": "*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "local:lib/OrangeBoxSshTunnel"
+  },
+  "authors": [
+    {
+      "name": "playmiel"
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+
+}

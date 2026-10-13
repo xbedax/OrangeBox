@@ -1,0 +1,132 @@
+TXT_ERR_MISSING_DOOR_NUMBER			"Error: Missing door number in request"
+TXT_ERR_INVALID_DOOR_NUMBER 	"Error: Invalid door number " 
+TXT_ERR_INVALID_DOOR_FORMAT		"Error: Invalid door number format"
+TXT_DIAGNOSTIC_SNAPSHOT_STORED	"Diagnostic snapshot stored"
+TXT_DIAGNOSTIC_SNAPSHOT_FAILED	"Diagnostic snapshot failed"
+TXT_ERR_PRESENCE_NOT_PROVIDED	"Error: Presence code required but not provided"
+TXT_ERR_PRESENCE_INVALID		"Error: Invalid presence code "
+TXT_ERR_DOOR_QUEUE_FULL			"Error: Door request queue unavailable or full"
+TXT_OPENING_DOOR_NUMBER			"Opening door number "
+TXT_IMAGE_NOT_READY				"Image not ready"
+TXT_OPERATED_LOCALLY			"Box operated locally, please wait"
+
+TXT_ERR_MISSING_DOOR_NUMBER		"R01"			//"Error: Missing door number in request"
+TXT_ERR_INVALID_DOOR_NUMBER 	"R02"			//"Error: Invalid door number " 
+TXT_ERR_INVALID_DOOR_FORMAT		"Error: Invalid door number format"
+TXT_DIAGNOSTIC_SNAPSHOT_STORED	"Diagnostic snapshot stored"
+TXT_DIAGNOSTIC_SNAPSHOT_FAILED	"Diagnostic snapshot failed"
+TXT_ERR_PRESENCE_NOT_PROVIDED	"Error: Presence code required but not provided"
+TXT_ERR_PRESENCE_INVALID		"Error: Invalid presence code "
+TXT_ERR_DOOR_QUEUE_FULL			"Error: Door request queue unavailable or full"
+
+TXT_IMAGE_NOT_READY				"Image not ready"
+TXT_OPERATED_LOCALLY			"Box operated locally, please wait"
+
+
+missingDoorNumber "R17";
+invalidDoorNumber "R18";
+invalidDoorFormat "R19";
+doorOpen "R20";
+openingDoorNumber "R21";
+doorClosed "R22";
+snapshotStored "R23";
+snapshotFailed "R24";
+cameraError "R25";
+presenceNotProvided "R26";
+presenceInvalid "R27";
+operatedLocally   "R28";
+imageNotReady "R29";
+doorQueueFull "R30";
+R17: "",
+R18: "",
+R19: "",
+R20: "",
+R21: "",
+R22: "",
+R23: "",
+R24: "",
+R25: "",
+R26: "",
+R27: "",
+R28: "",
+R29: "",
+R30: "",
+
+
+const translations = {
+    cs: {
+		R17: "Chyba: V požadavku chybí číslo dveří",
+		R18: "Chyba: Nesprávné číslo dveří",
+		R19: "Chyba: Nesprávný formát čísla dveří",
+		R20: "Dveře číslo <door_number> otevřeny",
+		R21: "Otevírám dveře číslo <door_number>",
+		R22: "Dveře číslo <door_number> zavřeny",
+		R23: "Výstup diagnostiky uložen",
+		R24: "Chyba uložení diagnostiky",
+		R25: "Chyba operace s kamerou",
+		R26: "Chyba: Požadováno ověření přítomnosti, ale kód nezaslán",
+		R27: "Chyba: Nesprávný kód ověření přítomnosti",
+		R28: "Probíhá lokální operace, čekejte prosím",
+		R29: "Obraz není připraven",
+		R30: "Chyba: Nelze zařadit manipulaci s dveřmi do fronty",
+		L_box_control:	"Ovládání",
+		L_open_box:	"O&nbsp;t&nbsp;e&nbsp;v&nbsp;ř&nbsp;í&nbsp;t&nbsp;!",
+		L_door_state:	"Stav dveří: ",
+		L_ambient:	"Osvětlení: ",
+		L_camera_data:	"Kamera: ",
+		L_active_pins: "Aktivní PINy"
+		L_Name:	"Jméno",
+		L_Value:	"Hodnota",
+		L_Id:	"Id",
+		L_Id:	"Id",
+		L_Id:	"Id",
+
+    },
+
+    en: {
+		R17: "Error: Missing door number in request",
+		R18: "Error: Invalid door number",
+		R19: "Error: Invalid door number format",
+		R20: "Door <door_number> open",
+		R21: "Opening door number <door_number>",
+		R22: "Door <door_number> closed",
+		R23: "Diagnostic snapshot stored",
+		R24: "Diagnostic snapshot failed",
+		R25: "Camera operation error",
+		R26: "Error: Presence code required but not provided",
+		R27: "Error: Invalid presence code",
+		R28: "Local operation underway, please wait",
+		R29: "Image not ready",
+		R30: "Error: Door request queue unavailable or full",
+		L_box_control:	"Box control",
+		L_open_box:	"O&nbsp;p&nbsp;e&nbsp;n&nbsp; &nbsp; &nbsp;B&nbsp;O&nbsp;X",
+		L_door_state:	"Door state: ",
+		L_ambient:	"Ambient: ",
+		L_camera_data:	"Camera data: ",
+		L_active_pins: "Active PINs"
+		L_Name:	"Name",
+		L_Value:	"Value",
+		L_Id:	"Id",
+		L_Id:	"Id",
+		L_Id:	"Id",
+
+
+    },
+
+    de: {
+		R17: „Fehler: Türnummer in der Anfrage fehlt“,
+        R18: „Fehler: Ungültige Türnummer“,
+        R19: „Fehler: Ungültiges Format der Türnummer“,
+        R20: „Tür <door_number> offen“,
+        R21: „Tür Nummer <door_number> wird geöffnet“,
+		R22: „Tür <Türnummer> geschlossen“,
+        R23: „Diagnose-Snapshot gespeichert“,
+        R24: „Diagnose-Snapshot fehlgeschlagen“,
+        R25: „Fehler beim Kamerabetrieb“,
+		R26: „Fehler: Anwesenheitscode erforderlich, aber nicht angegeben“,
+        R27: „Fehler: Ungültiger Anwesenheitscode“,
+        R28: „Lokaler Vorgang läuft, bitte warten“,
+		R29: „Bild noch nicht bereit“,
+        R30: „Fehler: Warteschlange für Türanforderungen nicht verfügbar oder voll“,
+    }
+};

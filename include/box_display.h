@@ -15,27 +15,66 @@
 //#define OLEDLINECHARS 20
 //#endif
 
+enum DisplayLine {
+    INFO_LINE = 0,
+    ACTION_LINE = 1,
+    RESPONSE_LINE = 2,
+    STATUS_LINE = 3
+};
+
 //overal layout - 20x4 lcd
 #define INFO_LINE_IDX 0
 #define ACTION_LINE_IDX 1
 #define RESPONSE_LINE_IDX 2
 #define STATUS_LINE_IDX 3                               //position of the status line on the LCD, adjust as needed
 
+enum DisplayText {
+    INFOLINE_HOME = 0,
+    INFOLINE_PASS = 1,
+    INFOLINE_CANCEL = 2,
+    INFOLINE_EMPTY = 3,
+    ACTIONLINE_OPEN_PASSWORD = 4,
+    ACTIONLINE_BADPASS = 5,
+    ACTIONLINE_CLOSE = 6,
+    ACTIONLINE_PRESENCE = 7,
+    ACTIONLINE_HOME = 8,
+    ACTIONLINE_CLOSETHX = 9,
+    ACTIONLINE_SCAN = 10,
+    ACTIONIDX_MAX = 10,                                     // Maximum index for action line types - adjust when adding new /removing action line types
+    RESPONSELINE_OPENING = 11,
+    RESPONSELINE_BADPASS = 12,
+    RESPONSELINE_PROGRESS = 13,
+    RESPONSELINE_HOME = 14,
+    RESPONSELINE_EMPTY = 15,    
+    RESPONSEIDX_MAX = 16,                                    // Maximum index for response line types - adjust when adding new /removing response line types
+    DISPLAYTEXT_MAX = 16,                                    // Maximum index for all display text types - adjust when adding new /removing display text types
+};
+enum DisplayLanguage {
+    LANG_EN = 0,
+    LANG_CZ = 1,
+    LANG_CS = 1,    // alias for Czech language
+    LANG_DE = 2
+};
+
+
 
 // Info line layout
+/*
 #define INFOIDX_MAX      4                              // number of info line types, adjust as needed, but make sure to update the info line content and labels accordingly
 //#define INFOLINE_TXT_HOME      " 1-heslo  2-overeni "   // Info line message for mode selection
-#define INFOLINE_TXT_HOME      " 1-PIN 2-kod 3-scan "   // Info line message for mode selection
-#define INFOLINE_TXT_PASS      "*-oprava #-potvrzeni"   // Info line message for password input mode
-#define INFOLINE_TXT_CANCEL    "*-zpet              "                 // Info line message for cancel
+#define INFOLINE_TXT_HOME      " 1-PIN 2-kód 3-sken "   // Info line message for mode selection
+#define INFOLINE_TXT_PASS      "*-oprava #-potvrzení"   // Info line message for password input mode
+#define INFOLINE_TXT_CANCEL    "*-zpět              "                 // Info line message for cancel
 #define INFOLINE_TXT_EMPTY     "                    "
-
+*/
+/*
 #define INFOLINE_HOME      0                            // Info line message for mode selection
 #define INFOLINE_PASS      1                            // Info line message for password input mode
 #define INFOLINE_CANCEL    2                            // Info line message for cancel
 #define INFOLINE_EMPTY     3
-
+*/
 // Content of Action line - modes
+/*
 #define ACTIONIDX_MAX    7                              // number of action line types, adjust as needed, but make sure to update the action line content and labels accordingly
 
 #define ACTIONLINE_OPEN_PASSWORD              0         // Action: Password input
@@ -45,7 +84,8 @@
 #define ACTIONLINE_HOME                       4         // Action: No action
 #define ACTIONLINE_CLOSETHX                   5         // Action: Door closed
 #define ACTIONLINE_SCAN                       6         // Action: Scan code
-
+*/
+/*
 #define ACTIONLINE_TXT_PASS      "   Heslo: "           // Action line message for password input mode
 #define ACTIONLINE_TXT_BADPASS   "      Cekejte!      " // Action line message for waiting for password input mode
 #define ACTIONLINE_TXT_CLOSE     "   Zavrete dvere!   " // Action line message for closing doors
@@ -53,8 +93,10 @@
 #define ACTIONLINE_TXT_HOME      ""
 #define ACTIONLINE_TXT_CLOSETHX  "      Dekujeme!     " // Action line message for door closed
 #define ACTIONLINE_TXT_SCAN      "  Naskenujte kod.   " // Action line message for scan mode
+*/
 
 // Content of Response line - responses to user actions
+/*
 #define RESPONSEIDX_MAX 5                               // number of response line types, adjust as needed, but make sure to update the response line content and labels accordingly
 
 #define RESPONSELINE_OPENING                 0          // Response: Door opening
@@ -62,18 +104,19 @@
 #define RESPONSELINE_PROGRESS                2          // Response: Presence code verification
 #define RESPONSELINE_HOME                    3          // Response: No action
 #define RESPONSELINE_EMPTY                   4
-
-
+*/
+/*
 #define RESPONSELINE_TXT_OPENING "OTEVIRAM"             // Response line message for door opening action
 #define RESPONSELINE_TXT_BADPASS "SPATNE HESLO!"        // Response line message for bad password
 #define RESPONSELINE_TXT_PROGRESS " ZBYVA: "
 #define RESPONSELINE_TXT_HOME       _VERSION_
 #define RESPONSELINE_TXT_EMPTY    "                    "
-
+*/
 #define PROGRESS_BAR_WIDTH                  10          // Width of the presence code validity progress bar, adjust as needed based on display width and layout
 
 // Status line stuff
 // line layout
+
 #define STIDX_CLIENT     0
 #define STIDX_LINK       1
 #define STIDX_LOGGER    2
@@ -102,21 +145,14 @@
 #define LCD_HEIGHT                  4
 #define DISP_WIDTH                  LCD_WIDTH
 #define DISP_DOOR_COUNT  (LCD_WIDTH - (STIDX_MAX + 3))/2  // number of characters available for door status display, adjust as needed, but make sure to update the status line layout in the display accordingly
-
 #endif
 
-
-
-
 // Status line indicator indexes
-
-
-
 
 class BoxDisplay {
 
 public:
-    // Box display interface
+// Box display interface
 // This header defines the shared display API for OLED/LCD output.
 
 // Initialize the selected display hardware.
@@ -139,17 +175,25 @@ void setPasswordLength (uint8_t pass_len);
 void setVerifyCode (const char* code);
 void setProgressBar (uint8_t expirationProgresss); // e.g. display a progress bar for the presence code validity, where expirationProgress is a value from 0 to 100 representing the percentage of validity time remaining
 
-void writeInfoLine (uint8_t infoType);
+void writeInfoLine (DisplayText infoType);
 void writeStatusLine (void);
-void writeActionLine (uint8_t actionType);
-void writeResponseLine (uint8_t responseType);
+void writeActionLine (DisplayText actionType);
+void writeResponseLine (DisplayText responseType);
+void setDisplayLanguage(int lang);
+const char * const *displayText; 
 
 
 private:
 
-const char *infoTypes[INFOIDX_MAX] = { INFOLINE_TXT_HOME, INFOLINE_TXT_PASS, INFOLINE_TXT_CANCEL, INFOLINE_TXT_EMPTY };  // Labels for the status indicators, e.g. Client, Link, Ambient, Online
+// Pointer to the first element of the inner array for the selected language.
+// langDisplayText[DISP_LANG] has type const char*[16] and decays to const char**
+// here, so later use is single-dimension: displayText[ACTIONLINE_BADPASS].
+
+/*const char *infoTypes[INFOIDX_MAX] = { INFOLINE_TXT_HOME, INFOLINE_TXT_PASS, INFOLINE_TXT_CANCEL, INFOLINE_TXT_EMPTY };  // Labels for the status indicators, e.g. Client, Link, Ambient, Online
 const char *actionTypes[ACTIONIDX_MAX] = { ACTIONLINE_TXT_PASS, ACTIONLINE_TXT_BADPASS, ACTIONLINE_TXT_CLOSE, ACTIONLINE_TXT_PRESENCE, ACTIONLINE_TXT_HOME, ACTIONLINE_TXT_CLOSETHX, ACTIONLINE_TXT_SCAN };  // Labels for the action indicators
 const char *responseTypes[RESPONSEIDX_MAX] = { RESPONSELINE_TXT_OPENING, RESPONSELINE_TXT_BADPASS, RESPONSELINE_TXT_PROGRESS, RESPONSELINE_TXT_HOME, RESPONSELINE_TXT_EMPTY };  // Labels for the response indicators
+*/
+
 char currentStatus[STIDX_MAX] = {'C', 'E', '.', 'X'};              // Array to hold the current status indicators, e.g. online status, communication status, ambient status, etc.
 char currentDoorOpen[DISP_DOOR_COUNT*2+1];// List of currently open doors, e.g. [0103] for doors 1 and 3 open, door 2 closed, adjust size as needed based on the number of doors and display layout
 int8_t currentPassLen;                      // The length of password entered so far, used for display purposes

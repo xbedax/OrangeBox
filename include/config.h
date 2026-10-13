@@ -38,6 +38,13 @@
 /*-----------------*/
 /* Global settings */
 /*-----------------*/
+
+// Display language
+
+#ifndef DISP_LANG
+#define DISP_LANG LANG_EN  // Default display language, can be changed to LANG_CZ or LANG_DE as needed
+#endif
+
 // Credential settings
 #define CRED_NAME_LEN 10                      // length of credential name
 #define PIN_CODE_LEN 8                      // lenght of the PIN itself
@@ -236,8 +243,6 @@
 
 #define CRED_DELETE_BEACON "deletebutton"
 #define CRED_SAVE_BEACON "savebutton"
-
-
 
 
 // Message strings for WebSocket communication

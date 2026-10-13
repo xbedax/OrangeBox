@@ -25,6 +25,9 @@
 //              NTP time sync
 //              RTC
 //              internal diagnostics
+//              reader
+//              protocol cleanup
+//              translation
 
 #define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 
@@ -119,6 +122,24 @@ HardwareSerial scannerUart(QR_SCANNER_UART_NUM);
 BoxRtc boxRtc;
 //CameraHandler cameraHandler; // Camera handler instance
 DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
+
+namespace ResultCode {
+    constexpr char missingDoorNumber[] = "R17";
+    constexpr char invalidDoorNumber[]     = "R18";
+    constexpr char invalidDoorFormat[]    = "R19";
+    constexpr char doorOpen[] = "R20";
+    constexpr char openingDoorNumber[] = "R21";
+    constexpr char doorClosed[] = "R22";
+    constexpr char snapshotStored[] = "R23";
+    constexpr char snapshotFailed[] = "R24";
+    constexpr char cameraError[] = "R25";
+    constexpr char presenceNotProvided[] = "R26";
+    constexpr char presenceInvalid[] = "R27";
+    constexpr char operatedLocally  [] = "R28";
+    constexpr char imageNotReady[] = "R29";
+    constexpr char doorQueueFull[] = "R30";
+}
+
 
 void handleDueActions(uint8_t action, const char* arg);
 void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis);
@@ -242,7 +263,7 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     
     if (doorNumValue.isNull()) {
         logger.logPrint(SEVERITY_ERROR, "Error: Missing door number in request", BOX_HOST_NAME, LOGAREA_ACCESS);
-        response[MSG_LASTRESULT] = "Error: Missing door number in request";
+        response[MSG_LASTRESULT] = ResultCode::missingDoorNumber;
         webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
     }
@@ -252,29 +273,29 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
       char* endptr;
       if (doorNumStr == nullptr || doorNumStr[0] == '\0') {
         logger.logPrint(SEVERITY_ERROR, "Error: Missing door number in request", BOX_HOST_NAME, LOGAREA_ACCESS);
-        response[MSG_LASTRESULT] = "Error: Missing door number in request";
+        response[MSG_LASTRESULT] = ResultCode::missingDoorNumber;
         webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
       }
       lnum = strtoul(doorNumStr, &endptr, 10);
       if (*endptr != '\0') {
-        logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNumStr), BOX_HOST_NAME, LOGAREA_ACCESS);
-        response[MSG_LASTRESULT] = "Error: Invalid door number " + String(doorNumStr);
+        logger.logPrint(SEVERITY_ERROR, "Error: invalid door number" + String(doorNumStr), BOX_HOST_NAME, LOGAREA_ACCESS);
+        response[MSG_LASTRESULT] = ResultCode::invalidDoorNumber;
         webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
       }
     } else if (doorNumValue.is<unsigned long>()) {
       lnum = doorNumValue.as<unsigned long>();
     } else {
-      logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number format", BOX_HOST_NAME, LOGAREA_ACCESS);
-      response[MSG_LASTRESULT] = "Error: Invalid door number format";
+      logger.logPrint(SEVERITY_ERROR, "Error: invalid door format", BOX_HOST_NAME, LOGAREA_ACCESS);
+      response[MSG_LASTRESULT] = ResultCode::invalidDoorFormat;
       webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
       return;
     }
 
     if (lnum > 254 ) { // Door 0 is valid; 255 is reserved for unknown/special values
-      logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
-      response[MSG_LASTRESULT] = "Error: Invalid door number " + String(lnum);
+      logger.logPrint(SEVERITY_ERROR, "txt_err_invalid_door " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
+      response[MSG_LASTRESULT] = ResultCode::invalidDoorNumber;
       webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
       return;
     }
@@ -317,7 +338,7 @@ void handleSnapshotDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
   (void)data;
   JsonDocument response;
   bool stored = boxDiagnostics.snapshotStatistics();
-  response[MSG_LASTRESULT] = stored ? "Diagnostic snapshot stored" : "Diagnostic snapshot failed";
+  response[MSG_LASTRESULT] = stored ? ResultCode::snapshotStored : ResultCode::snapshotFailed;
   response["count"] = boxDiagnostics.snapshotCount();
   response["html"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
   sendLastResult(sender, response);
@@ -347,7 +368,7 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
     unsigned long lnum = strtoul(doorNumStr, &endptr, 10);
     if (lnum > 254 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
       logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
-      response["lastresult"] = "Error: Invalid door number " + String(lnum);
+      response["lastresult"] = ResultCode::invalidDoorNumber + String(lnum);
       webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
       return;
     }
@@ -358,13 +379,13 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
       bool checkPresence = data[MSG_CHECKPRESENCE];
       if (checkPresence && strlen(presenceCode) == 0) {
         logger.logPrint(SEVERITY_ERROR, "Error: Presence code required but not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
-        response[MSG_LASTRESULT] = "Error: Presence code required but not provided";
+        response[MSG_LASTRESULT] = ResultCode::presenceNotProvided;
         webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
       }
       if(checkPresence && (!boxStateMachine.isPresenceCodeValid() || strcmp(presenceCode, boxStateMachine.getPresenceCode()) != 0)) {
         logger.logPrint(SEVERITY_ERROR, "Error: Invalid presence code " + String(presenceCode), BOX_HOST_NAME, LOGAREA_ACCESS);
-        response[MSG_LASTRESULT] = "Error: Invalid presence code " + String(presenceCode);
+        response[MSG_LASTRESULT] = ResultCode::presenceInvalid + String(presenceCode);
         webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
         return;
       }
@@ -372,10 +393,10 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
     uint8_t num = static_cast<uint8_t>(lnum);
 
     if (!webOpenRequests || xQueueSend(webOpenRequests, &num, 0) != pdTRUE) {
-      response[MSG_LASTRESULT] = "Error: Door request queue unavailable or full";
+      response[MSG_LASTRESULT] = ResultCode::doorQueueFull;
     } else {
       logger.logPrint(SEVERITY_INFO, "Opening box door number " + String(num), BOX_HOST_NAME, LOGAREA_ACCESS);
-      response[MSG_LASTRESULT] = "Opening door number " + String(num);
+      response[MSG_LASTRESULT] = ResultCode::openingDoorNumber + String(num);
     }
     webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
   }
@@ -405,7 +426,7 @@ void handleCapture(AsyncWebServerRequest *request) {
     xSemaphoreGive(imageMutex);
   } else {
     xSemaphoreGive(imageMutex);
-    request->send(503, "text/plain", "Image not ready");
+    request->send(503, "text/plain", ResultCode::imageNotReady);
   }
 } // handleCapture
 

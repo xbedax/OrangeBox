@@ -148,27 +148,27 @@ bool buildCredResponse(CredStorage& storage, JsonObjectConst request, JsonDocume
 bool applyCredChange(CredStorage& storage, JsonObjectConst request, JsonDocument& response) {
     response.clear();
     CredType type;
-    if (!parseType(request["credType"], type)) return fail(response, "invalid_cred_type");
+    if (!parseType(request["credType"], type)) return fail(response, "txt_invalid_cred_type");
     response["credType"] = credTypeName(type);
     const Fields fields = fieldsFor(type);
     const char* action = request["clicked"].as<const char*>();
     if (!action || (strcmp(action, CRED_SAVE_BEACON) != 0 && strcmp(action, CRED_DELETE_BEACON) != 0))
-        return fail(response, "invalid_action");
+        return fail(response, "txt_invalid_action");
     const bool deleting = strcmp(action, CRED_DELETE_BEACON) == 0;
     int64_t id;
     if (!integer(request[fields.id], 0, LAST_KEY - 1, id) || (deleting && id == 0))
-        return fail(response, "invalid_cred_id");
+        return fail(response, "txt_invalid_cred_id");
     CacheRecord cred = {};
     cred.credType = type;
     cred.credId = static_cast<uint32_t>(id);
     cred.remaining = type == CredType::PacketNumber ? 1 : -1;
-    if (id && !storage.getCred(cred.credId, cred, type)) return fail(response, "cred_not_found");
-    if (!copyText(request[fields.name], cred.name, sizeof(cred.name))) return fail(response, "invalid_cred_name");
+    if (id && !storage.getCred(cred.credId, cred, type)) return fail(response, "txt_cred_not_found");
+    if (!copyText(request[fields.name], cred.name, sizeof(cred.name))) return fail(response, "txt_invalid_cred_name");
     if (type == CredType::Password) {
-        if (!copyText(request[fields.value], cred.pin, sizeof(cred.pin))) return fail(response, "invalid_cred_value");
+        if (!copyText(request[fields.value], cred.pin, sizeof(cred.pin))) return fail(response, "txt_invalid_cred_value");
     } else {
         if (!copyText(request[fields.value], cred.packetNumber, sizeof(cred.packetNumber)))
-            return fail(response, "invalid_cred_value");
+            return fail(response, "txt_invalid_cred_value");
     }
     if (!deleting) {
         if ((!request[fields.from].isNull() && !parseDate(request[fields.from], false, cred.validFrom))
@@ -177,19 +177,19 @@ bool applyCredChange(CredStorage& storage, JsonObjectConst request, JsonDocument
             return fail(response, "invalid_date_range");
         if (!request[MSG_DOORNUM].isNull()) {
             int64_t door;
-            if (!integer(request[MSG_DOORNUM], 0, 254, door)) return fail(response, "invalid_door");
+            if (!integer(request[MSG_DOORNUM], 0, 254, door)) return fail(response, "txt_invalid_door");
             cred.doorNum = static_cast<uint8_t>(door);
         }
         if (type == CredType::Password) {
             JsonVariantConst unlimited = request[MSG_PINUNLIMITED];
-            if (!unlimited.isNull() && !unlimited.is<bool>()) return fail(response, "invalid_unlimited");
+            if (!unlimited.isNull() && !unlimited.is<bool>()) return fail(response, "txt_invalid_unlimited");
             if (unlimited.is<bool>() && unlimited.as<bool>()) cred.remaining = -1;
             else if (!request[MSG_REMAINING].isNull()) {
                 int64_t amount;
                 if (!integer(request[MSG_REMAINING], -1, INT32_MAX, amount)
-                    || (unlimited.is<bool>() && amount < 0)) return fail(response, "invalid_amount");
+                    || (unlimited.is<bool>() && amount < 0)) return fail(response, "txt_invalid_amount");
                 cred.remaining = static_cast<int32_t>(amount);
-            } else if (unlimited.is<bool>()) return fail(response, "invalid_amount");
+            } else if (unlimited.is<bool>()) return fail(response, "txt_invalid_amount");
         }
     }
     bool changed;
@@ -199,10 +199,10 @@ bool applyCredChange(CredStorage& storage, JsonObjectConst request, JsonDocument
         cred.credId = storage.addCred(cred);
         changed = cred.credId != 0;
     }
-    if (!changed) return fail(response, "cred_change_failed");
+    if (!changed) return fail(response, "txt_cred_change_failed");
     response["success"] = true;
     response["credId"] = cred.credId;
-    response["action"] = deleting ? "deleted" : id ? "updated" : "created";
-    response[MSG_LASTRESULT] = deleting ? "Credential deleted" : "Credential saved";
+    response["action"] = deleting ? "txt_deleted" : id ? "txt_updated" : "txt_created";
+    response[MSG_LASTRESULT] = deleting ? "txt_credential_deleted" : "txt_credential_saved";
     return true;
 }
