@@ -112,6 +112,35 @@ struct VPNConfig {
     uint32_t debugBaudRate = 115200;
 };
 
+class VPNDirectClient {
+public:
+    VPNDirectClient();
+    ~VPNDirectClient();
+
+    VPNDirectClient(const VPNDirectClient&) = delete;
+    VPNDirectClient& operator=(const VPNDirectClient&) = delete;
+
+    bool connected();
+    bool eof() const;
+    int lastError() const;
+    uint16_t lastStopCloseEagainCount() const;
+    uint16_t lastStopFreeEagainCount() const;
+    uint32_t lastStopDurationMs() const;
+    int lastStopCloseResult() const;
+    int lastStopFreeResult() const;
+
+    size_t write(const uint8_t* data, size_t len, uint32_t timeoutMs = 5000);
+    size_t write(const char* text, uint32_t timeoutMs = 5000);
+    int read(uint8_t* buffer, size_t len, uint32_t timeoutMs = 0);
+    int read(uint32_t timeoutMs = 0);
+    bool readLine(String& out, uint32_t timeoutMs = 5000);
+    bool stop(uint32_t timeoutMs = 5000);
+
+private:
+    friend class VPNManager;
+    void* backend = nullptr;
+};
+
 class VPNManager {
 public:
     VPNManager();
@@ -127,6 +156,12 @@ public:
     int getBoundPort() const;
     String getStateString() const;
     uint32_t getNextReconnectDelayMs() const;
+    bool openDirectTcpip(VPNDirectClient& directClient,
+                         const char* host,
+                         uint16_t port,
+                         const char* sourceHost = "127.0.0.1",
+                         uint16_t sourcePort = 0,
+                         uint32_t timeoutMs = 5000);
 
 private:
     enum class CommandType : uint8_t {

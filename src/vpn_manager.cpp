@@ -35,6 +35,179 @@ bool isPortSet(uint16_t port)
 
 }
 
+VPNDirectClient::VPNDirectClient()
+{
+}
+
+VPNDirectClient::~VPNDirectClient()
+{
+    stop();
+}
+
+bool VPNDirectClient::connected()
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<SSHDirectClient*>(backend);
+    return client != nullptr && client->connected();
+#else
+    return false;
+#endif
+}
+
+bool VPNDirectClient::eof() const
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<const SSHDirectClient*>(backend);
+    return client == nullptr || client->eof();
+#else
+    return true;
+#endif
+}
+
+int VPNDirectClient::lastError() const
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<const SSHDirectClient*>(backend);
+    return client != nullptr ? client->lastError() : 0;
+#else
+    return 0;
+#endif
+}
+
+uint16_t VPNDirectClient::lastStopCloseEagainCount() const
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<const SSHDirectClient*>(backend);
+    return client != nullptr ? client->lastStopCloseEagainCount() : 0;
+#else
+    return 0;
+#endif
+}
+
+uint16_t VPNDirectClient::lastStopFreeEagainCount() const
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<const SSHDirectClient*>(backend);
+    return client != nullptr ? client->lastStopFreeEagainCount() : 0;
+#else
+    return 0;
+#endif
+}
+
+uint32_t VPNDirectClient::lastStopDurationMs() const
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<const SSHDirectClient*>(backend);
+    return client != nullptr ? client->lastStopDurationMs() : 0;
+#else
+    return 0;
+#endif
+}
+
+int VPNDirectClient::lastStopCloseResult() const
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<const SSHDirectClient*>(backend);
+    return client != nullptr ? client->lastStopCloseResult() : 0;
+#else
+    return 0;
+#endif
+}
+
+int VPNDirectClient::lastStopFreeResult() const
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<const SSHDirectClient*>(backend);
+    return client != nullptr ? client->lastStopFreeResult() : 0;
+#else
+    return 0;
+#endif
+}
+
+size_t VPNDirectClient::write(const uint8_t* data, size_t len, uint32_t timeoutMs)
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<SSHDirectClient*>(backend);
+    return client != nullptr ? client->write(data, len, timeoutMs) : 0;
+#else
+    (void)data;
+    (void)len;
+    (void)timeoutMs;
+    return 0;
+#endif
+}
+
+size_t VPNDirectClient::write(const char* text, uint32_t timeoutMs)
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<SSHDirectClient*>(backend);
+    return client != nullptr ? client->write(text, timeoutMs) : 0;
+#else
+    (void)text;
+    (void)timeoutMs;
+    return 0;
+#endif
+}
+
+int VPNDirectClient::read(uint8_t* buffer, size_t len, uint32_t timeoutMs)
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<SSHDirectClient*>(backend);
+    return client != nullptr ? client->read(buffer, len, timeoutMs) : -1;
+#else
+    (void)buffer;
+    (void)len;
+    (void)timeoutMs;
+    return -1;
+#endif
+}
+
+int VPNDirectClient::read(uint32_t timeoutMs)
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<SSHDirectClient*>(backend);
+    return client != nullptr ? client->read(timeoutMs) : -1;
+#else
+    (void)timeoutMs;
+    return -1;
+#endif
+}
+
+bool VPNDirectClient::readLine(String& out, uint32_t timeoutMs)
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<SSHDirectClient*>(backend);
+    if (client == nullptr) {
+        out = "";
+        return false;
+    }
+    return client->readLine(out, timeoutMs);
+#else
+    (void)timeoutMs;
+    out = "";
+    return false;
+#endif
+}
+
+bool VPNDirectClient::stop(uint32_t timeoutMs)
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    auto* client = static_cast<SSHDirectClient*>(backend);
+    if (client == nullptr) {
+        backend = nullptr;
+        return true;
+    }
+    bool stopped = client->stop(timeoutMs);
+    delete client;
+    backend = nullptr;
+    return stopped;
+#else
+    (void)timeoutMs;
+    backend = nullptr;
+    return true;
+#endif
+}
+
 VPNManager::VPNManager()
     : client(
 #if VPN_MANAGER_HAS_REVERSE_TUNNEL
@@ -256,6 +429,52 @@ uint32_t VPNManager::getNextReconnectDelayMs() const
         return 0;
     }
     return timeoutRemaining(reconnectStartedAt, reconnectDelayMs, now);
+}
+
+bool VPNManager::openDirectTcpip(VPNDirectClient& directClient,
+                                 const char* host,
+                                 uint16_t port,
+                                 const char* sourceHost,
+                                 uint16_t sourcePort,
+                                 uint32_t timeoutMs)
+{
+#if VPN_MANAGER_HAS_REVERSE_TUNNEL
+    if (!isConnected() || !isTextSet(host) || port == 0) {
+        return false;
+    }
+
+    auto* tunnel = static_cast<SSHTunnel*>(client);
+    if (tunnel == nullptr || !tunnel->isConnected()) {
+        return false;
+    }
+
+    directClient.stop();
+    auto* directBackend = new SSHDirectClient();
+    if (directBackend == nullptr) {
+        return false;
+    }
+
+    if (!tunnel->openDirectTcpip(*directBackend,
+                                 host,
+                                 port,
+                                 textOrEmpty(sourceHost),
+                                 sourcePort,
+                                 timeoutMs)) {
+        delete directBackend;
+        return false;
+    }
+
+    directClient.backend = directBackend;
+    return true;
+#else
+    (void)directClient;
+    (void)host;
+    (void)port;
+    (void)sourceHost;
+    (void)sourcePort;
+    (void)timeoutMs;
+    return false;
+#endif
 }
 
 bool VPNManager::hasBackend() const
