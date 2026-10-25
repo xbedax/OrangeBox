@@ -484,17 +484,6 @@
 		function handleMessage(myObj){
 			var command = myObj["_command_"];
 			var keys = Object.keys(myObj["data"]);
-			if ( command == "c_visibility") {
-				for (var i = 0; i < keys.length; i++){
-				  var key = keys[i];
-				  console.log("Visibility for key: " + key);
-				  if ( myObj["data"][key] == 'no') {
-					document.getElementById(key).hidden = true;
-				  }else{
-					document.getElementById(key).hidden = false;
-				  }  
-				}
-			}
 			if ( command == "c_ambientstate") {
 				console.log("Ambient state: " + myObj["data"]["state"]);
 				if ( myObj["data"]["state"] == 'on') {
@@ -576,14 +565,6 @@
 				console.log("Changing key: " + htmlBeacon);
 				document.getElementById(htmlBeacon).innerHTML = "";
 				document.getElementById(htmlBeacon).innerHTML = htmlContent;
-			}
-			if ( command == "c_content") {
-				for (var i = 0; i < keys.length; i++){
-					var key = keys[i];
-					console.log("Changing key: " + key);
-					document.getElementById(key).innerHTML = "";
-					document.getElementById(key).innerHTML = myObj["data"][key];
-				}
 			}
 		}
 		function stateUpdater () {

@@ -34,7 +34,7 @@ const getWebSocket = () => {
 };
 
 // Send collected form data to the WebSocket server as JSON.
-// Payload shape: { type: "formSubmit", modalId: "<id>", timestamp: <ms>, data: { id: value, … } }
+// Payload shape: { type: "formSubmit", modalId: "<id>", timestamp: <epoch>, data: { id: value, … } }
 const postFormData = (formData, mycommand, myscope) => {
   const socket = getWebSocket();
   const payload = JSON.stringify({

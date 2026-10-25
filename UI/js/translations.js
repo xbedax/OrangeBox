@@ -143,7 +143,7 @@ const translations = {
         R19: "Fehler: Ungültiges Format der Türnummer",
         R20: "Tür <door_number> offen",
         R21: "Tür Nummer <door_number> wird geöffnet",
-		R22: "Tür <Türnummer> geschlossen",
+		R22: "Tür <door_number> geschlossen",
         R23: "Diagnose-Snapshot gespeichert",
         R24: "Diagnose-Snapshot fehlgeschlagen",
         R25: "Fehler beim Kamerabetrieb",
