@@ -40,14 +40,15 @@ enum DisplayText {
     ACTIONLINE_HOME = 8,
     ACTIONLINE_CLOSETHX = 9,
     ACTIONLINE_SCAN = 10,
-    ACTIONIDX_MAX = 10,                                     // Maximum index for action line types - adjust when adding new /removing action line types
+    ACTIONIDX_MAX = 11,                                     // First index after action line texts
     RESPONSELINE_OPENING = 11,
     RESPONSELINE_BADPASS = 12,
     RESPONSELINE_PROGRESS = 13,
     RESPONSELINE_HOME = 14,
     RESPONSELINE_EMPTY = 15,    
-    RESPONSEIDX_MAX = 16,                                    // Maximum index for response line types - adjust when adding new /removing response line types
-    DISPLAYTEXT_MAX = 16,                                    // Maximum index for all display text types - adjust when adding new /removing display text types
+    RESPONSELINE_BADSCAN = 16,
+    RESPONSEIDX_MAX = 17,                                    // First index after response line texts
+    DISPLAYTEXT_MAX = 17,                                    // Number of display texts
 };
 enum DisplayLanguage {
     LANG_EN = 0,

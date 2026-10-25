@@ -17,7 +17,7 @@ static LCDI2C_Latin lcd1(LCD_ADDRESS, LCD_WIDTH, LCD_HEIGHT);  // I2C address: 0
 
 extern const char* fversion;
 
-static constexpr int TEXT_LINE_COUNT = 16;   // matches ACTIONLINE_*/RESPONSELINE_* count
+static constexpr int TEXT_LINE_COUNT = DISPLAYTEXT_MAX;
 static constexpr  char const* langDisplayText[][TEXT_LINE_COUNT] = {
     {
         " 1-Pin 2-code 3-scan",
@@ -35,9 +35,10 @@ static constexpr  char const* langDisplayText[][TEXT_LINE_COUNT] = {
         "BAD PASSWORD",
         "REMAINING: ",
         _VERSION_,
-        "                    "
+        "                    ",
+        "INVALID CODE"
     },
-    {
+/*    {
         " 1-Pin 2-kód 3-sken ",
         "*-oprava #-potvrzení",
         "*-zpět              ",
@@ -53,9 +54,29 @@ static constexpr  char const* langDisplayText[][TEXT_LINE_COUNT] = {
         "ŠPATNÉ HESLO",
         "ZBÝVÁ: ",
         _VERSION_,
-        "                    "
+        "                    ",
+        "NESPRÁVNÝ KÓD"
+    }*/
+       {
+        " 1-Pin 2-kod 3-sken ",
+        "*-oprava #-potvrzeni",
+        "*-zpet              ",
+        "                    ",
+        "   Heslo: ",
+        "      Cekejte!      ",
+        "   Zavrete dvere!   ",
+        "   Overeni: ",
+        "",
+        "      Dekujeme!     ",
+        "  Naskenujte balik. ",
+        "OTEVIRAM",
+        "SPATNE HESLO",
+        "ZBYVA: ",
+        _VERSION_,
+        "                    ",
+        "NESPRAVNY KOD"
     }
-    ,{
+    /*,{
         " 1-Pin 2-Code 3-Scan",
         " *-Rückt, #-Eingabet",
         " *-Abbrechen        ",
@@ -71,7 +92,27 @@ static constexpr  char const* langDisplayText[][TEXT_LINE_COUNT] = {
         "FALSCHES PASSWORT",
         "VERBLEIBEND: ",
         _VERSION_,
-        "                    "
+        "                    ",
+        "FALSCHER CODE"
+    }*/
+      ,{
+        " 1-Pin 2-Code 3-Scan",
+        " *-Ruckt, #-Eingabet",
+        " *-Abbrechen        ",
+        "                    ",
+        " Passwort: ",
+        "    Bitte warten!    ",
+        " Schliesen die Tur!  ",
+        "  Uberprufung: ",
+        "",
+        "     Vielen Dank!    ",
+        "  Scannen das Paket  ",
+        "OFFNEN",
+        "FALSCHES PASSWORT",
+        "VERBLEIBEND: ",
+        _VERSION_,
+        "                    ",
+        "FALSCHER CODE"
     }
 };
 constexpr int DISPLAY_LANG_COUNT = sizeof(langDisplayText) / sizeof(langDisplayText[0]);
@@ -146,7 +187,7 @@ void BoxDisplay::writeActionLine (DisplayText actionType) {
   char actionLineBuff[DISP_WIDTH + 1]; // Buffer to hold the entire action line
   uint8_t actionLineIdx = 0;
   if (actionType >= ACTIONIDX_MAX) {
-    logger.logPrint(SEVERITY_ERROR, "Invalid actionType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+    logger.logPrint(A_INVALID_ACTION_TYPE, LOGAREA_SYSTEM, SEVERITY_ERROR);
     return;
   }
   memset(actionLineBuff, ' ', DISP_WIDTH);
@@ -204,7 +245,7 @@ void BoxDisplay::writeActionLine (DisplayText actionType) {
           lcd1.print(actionLineBuff); 
         #endif
       } else {
-        logger.logPrint(SEVERITY_ERROR, "Invalid actionType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+        logger.logPrint(A_INVALID_ACTION_TYPE, LOGAREA_SYSTEM, SEVERITY_ERROR);
       }
       break;
   }
@@ -215,7 +256,7 @@ void BoxDisplay::writeInfoLine (DisplayText infoType) {
     // Usualy used to display static helper text
 
   if (infoType >= RESPONSEIDX_MAX) {
-  logger.logPrint(SEVERITY_ERROR, "Invalid infoType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  logger.logPrint(A_INVALID_INFO_TYPE, LOGAREA_SYSTEM, SEVERITY_ERROR);
   return;
   }
 #ifdef DISP_LCD
@@ -226,7 +267,7 @@ void BoxDisplay::writeInfoLine (DisplayText infoType) {
 
 void BoxDisplay::writeResponseLine (DisplayText responseType) {
   if (responseType >= RESPONSEIDX_MAX) {
-    logger.logPrint(SEVERITY_ERROR, "Invalid responseType idx presented\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+    logger.logPrint(A_INVALID_RESPONSE_TYPE, LOGAREA_SYSTEM, SEVERITY_ERROR);
     return;
   }
 
@@ -317,7 +358,7 @@ void BoxDisplay::displayInit(GpioHAL* gpioHal) {
   gpioHAL = gpioHal; // Store the pointer to the GPIO HAL for later use in display updates
   displayText = langDisplayText[DISP_LANG];
 #ifdef DISP_LCD
-  Serial.println("Initializing LCD display...");
+  logger.logPrint(A_DISPLAY_INITIALIZING, LOGAREA_SYSTEM, SEVERITY_INFO);
   lcd1.init();
   lcd1.backlight();
   lcd1.setCursor(0, 1);

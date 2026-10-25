@@ -1,4 +1,5 @@
 #include "websocket_log_transport.h"
+#include "log_serialization.h"
 
 #include <ArduinoJson.h>
 #include <cstring>
@@ -14,7 +15,7 @@
 #endif
 
 #ifndef LOG_WS_FRAME_MAX_LEN
-#define LOG_WS_FRAME_MAX_LEN 512
+#define LOG_WS_FRAME_MAX_LEN 1536
 #endif
 
 WebSocketLogTransport::WebSocketLogTransport(const char* host, uint16_t port, const char* path)
@@ -92,24 +93,13 @@ bool WebSocketLogTransport::sendNow(const QueuedLogRecord& record)
         return false;
     }
 
-    JsonDocument payload;
-    payload["source"] = record.source;
-    payload["area"] = record.logArea;
-    payload["severity"] = record.severity;
-    payload["message"] = record.message;
-    payload["timestamp"] = record.timestamp;
-
-    JsonDocument doc;
-    doc["_command_"] = COMM_LOG;
-    doc["_timestamp_"] = record.timestamp;
-    doc["data"] = payload;
-
-    String output;
-    serializeJson(doc, output);
-    if (!canWrite(output.length() + 8)) {
+    char output[LOG_WS_FRAME_MAX_LEN - 8];
+    size_t written;
+    if (!serializeLogRecord(record, output, sizeof(output), written)
+        || !canWrite(written + 8)) {
         return false;
     }
-    return sendTextFrame(output.c_str(), output.length());
+    return sendTextFrame(output, written);
 }
 
 void WebSocketLogTransport::onConnect(void* arg, AsyncClient* client)

@@ -7,7 +7,6 @@
 
 // Storage tests do not need a log transport.
 Logger logger;
-void Logger::logPrint(uint8_t, const String&, const char*, uint8_t) {}
 
 static CacheRecord credential(CredType type, const std::string& value, uint8_t door) {
     CacheRecord rec = {};
@@ -209,3 +208,6 @@ int main() {
     assert(read(FIRST_KEY).recordType == RecordType::CredentialV1);
     std::cout << "PASS: credential types, persistence, recovery and legacy reset\n";
 }
+
+bool Logger::shouldLog(uint8_t) const { return false; }
+void Logger::emit(const LogEvent&) {}

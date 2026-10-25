@@ -6,6 +6,7 @@ use utf8;
 
 use Mojolicious::Lite;
 use Mojo::JSON qw(decode_json encode_json);
+use JSON::PP ();
 use Fcntl qw(:flock);
 use File::Path qw(make_path);
 use POSIX qw(strftime);
@@ -33,7 +34,6 @@ websocket '/log' => sub {
             send_error($c, 'Invalid JSON');
             return;
         }
-																	print  "      Received" . $request->{_command_} . "\n";
 		
 
         unless (($request->{_command_} // '') eq 'c_log') {
@@ -54,8 +54,29 @@ websocket '/log' => sub {
         # Zároveň tím zabráníme vložení cesty typu ../../něco.
         unless (defined($area) && $area =~ /^\d+$/) {
             send_error($c, 'Invalid area');
-        }
             return;
+        }
+
+        unless ($area >= 2 && $area <= 6
+            && defined($data->{severity}) && $data->{severity} =~ /^[1-5]$/
+            && defined($data->{message}) && $data->{message} =~ /^\d+$/
+            && $data->{message} <= 65535) {
+            send_error($c, 'Invalid log metadata');
+            return;
+        }
+        my $params = $data->{messageparams};
+        unless (ref($params) eq 'HASH' && keys(%$params) <= 12) {
+            send_error($c, 'Invalid log parameters');
+            return;
+        }
+        for my $index (1 .. scalar(keys %$params)) {
+            my $key = "p$index";
+            unless (exists($params->{$key}) && defined($params->{$key})
+                && (!ref($params->{$key}) || JSON::PP::is_bool($params->{$key}))) {
+                send_error($c, 'Invalid log parameter keys or values');
+                return;
+            }
+        }
 
         my $filename = sprintf(
             '%s/area_%d.log',
@@ -75,6 +96,7 @@ websocket '/log' => sub {
             area      => 0 + $area,
             severity  => $data->{severity},
             message   => $data->{message},
+            messageparams => $params,
             timestamp => $data->{timestamp},
         };
 

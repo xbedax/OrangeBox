@@ -1,3 +1,4 @@
+#include "logger.h"
 #include <cassert>
 #include <iostream>
 #include <vector>
@@ -44,3 +45,7 @@ int main() {
     }
     std::cout << "Door contact debounce tests passed\n";
 }
+
+Logger logger;
+bool Logger::shouldLog(uint8_t) const { return false; }
+void Logger::emit(const LogEvent&) {}

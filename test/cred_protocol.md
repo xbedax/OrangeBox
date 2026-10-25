@@ -64,7 +64,7 @@ unbounded endpoints are still stored as zero in the firmware.
 Mutation acknowledgements also use c_setcred:
 
 ```json
-{"credType":"ctCode","success":true,"credId":2,"action":"created"}
+{"credType":"ctCode","success":true,"credId":2,"action":"txt_created"}
 ```
 
 All clients then receive a small c_setcred invalidation message:
@@ -86,10 +86,15 @@ Human-readable status is sent separately, before the structured response, using
 `c_lastresult` for credentials, door operations and diagnostic snapshots:
 
 ```json
-{"_command_":"c_lastresult","_timestamp_":1790437945,"data":{"lastresult":"Credential saved"}}
+{"_command_":"c_lastresult","_timestamp_":1790437945,"data":{"lastresult":"R43"}}
 ```
 
-The UI replaces the innerHTML of `#lastresult`; an empty string clears it.
+`lastresult` is always a result code (`R17`-`R44`); the UI translates it in the
+selected language. Dynamic message values are sent separately in `params`, for
+example `{"lastresult":"R21","params":{"door_number":4}}`. The UI interpolates
+these values as text, not HTML. The structured `c_setcred` response keeps its
+machine-readable `error` value independently of the user-facing result code.
+An empty status clears `#lastresult`.
 Diagnostic content uses `c_diagnostics` (`html`, `text`, `json`) and
 `c_diagnostic_snapshots` (`count`, `html`, optionally `text` and `json`).
 The `json` field retains the serialized JSON string returned by diagnostics.

@@ -487,12 +487,28 @@ The current controller separates human-readable status from structured responses
 {
   "_command_": "c_lastresult",
   "data": {
-    "lastresult": "Credential saved"
+    "lastresult": "R43"
   }
 }
 ```
 
-This replaces the former `c_content.lastresult` pattern and keeps the protocol independent of presentation.
+`lastresult` carries an `R` result code, never display text. Dynamic values are
+separate in `params`, for example:
+
+```json
+{
+  "_command_": "c_lastresult",
+  "data": {
+    "lastresult": "R21",
+    "params": { "door_number": 4 }
+  }
+}
+```
+
+The UI translates the code and interpolates parameters as text. Structured
+responses may include a separate machine-readable `error` field.
+This replaces the former `c_content.lastresult` pattern and keeps the protocol
+independent of presentation.
 
 A rename/new command `c_setlaststatus` has been proposed. It is **not treated as current in this revision** until implemented consistently in controller and clients. If adopted, it should preserve the same principle: semantic status data, no DOM target.
 
@@ -564,7 +580,12 @@ The watchdog's internal timeout arithmetic uses controller uptime, which is deli
 
 ### `c_log`
 
-Logging uses the same general envelope but a separate log transport/destination.
+Logging uses the general envelope and a separate log transport/destination.
+
+**Protocol change:** `data.message` is now an unsigned 16-bit numeric message ID,
+rather than rendered text. Receivers must preserve `messageparams` and use the
+[exported dictionary](log_messages.json) to display text. Old text-only receivers
+must be updated before using this firmware.
 
 ```json
 {
@@ -572,17 +593,86 @@ Logging uses the same general envelope but a separate log transport/destination.
   "_timestamp_": 1790784000,
   "data": {
     "source": "BOX-007",
-    "area": 5,
-    "severity": 2,
-    "message": "...",
-    "timestamp": 1790784000
+    "area": 3,
+    "severity": 5,
+    "message": 164,
+    "timestamp": 1790784000,
+    "messageparams": {
+      "p1": 7,
+      "p2": "192.168.1.20"
+    }
   }
 }
 ```
 
-The nested event timestamp describes the log event. Numeric area/severity values are defined by the logger/configuration and should be documented from those definitions rather than frozen independently here.
+Message 164 is catalogued as `A164` / `A_CLIENT_CONNECTED`. Its full text is
+`WebSocket client #{p1} connected from {p2}`; the optional display text is
+`Client {p1} online`. The prefix `A` is not sent on the wire.
 
-MQTT remains a possible future log transport and is outside the current WebSocket UI protocol.
+Parameters are named `p1` through `pN`, without gaps; there are at most
+`LOG_MAX_PARAMS` (12, in `config.h`). JSON member order has no significance:
+`{"p2":"192.168.1.20","p1":7}` has exactly the same meaning. Events without
+parameters carry `"messageparams": {}`. Values are JSON numbers, booleans or
+strings, never nested objects/arrays/null. Numeric strings such as `"001234"`
+remain strings. PINs and access codes are not included as log parameters.
+
+The event timestamp is captured at creation and retained during retries.
+Both timestamp fields contain that event time; neither becomes the send time.
+`source` is configured once in the logger and defaults to `BOX_HOST_NAME`;
+diagnostic callers may explicitly supply another source.
+
+Severity values increase with importance: DEBUG 1, INFO 2, WARNING 3, ERROR 4,
+CRITICAL 5. `LOGPRINT_MIN_SEVERITY` accepts that value and greater values.
+CRITICAL includes both successful and unsuccessful business/security events.
+Areas are COND 2 (reserved for environment sensors), COMM 3, SYSTEM 4,
+ACCESS 5 (credential management), OPERATION 6 (user operations and state reads).
+Area 1 has been retired and the remaining areas have not been renumbered.
+
+Only serial/display writers expand dictionary templates. The remote writer
+serializes metadata and typed parameters without consulting the dictionary.
+Message IDs and parameter meanings are permanent. A new meaning or incompatible
+parameter layout requires a new ID; retired IDs are never reused. A receiver
+should retain unknown IDs and parameters for later decoding.
+
+The RAM queue owns its parameter bytes, including text copied from temporary
+strings. Each event has a 160-byte TLV block (`LOG_PARAM_DATA_MAX_LEN`, including
+type/length overhead), with a separate count bounded by `LOG_MAX_PARAMS`.
+An oversized or otherwise invalid event is rejected, counted by
+`Logger::rejectedCount()`, and reported as A191 at ERROR severity if enabled.
+There is no silent truncation. A full queue evicts the oldest record and reports
+the lost count as A190 (ERROR) when transmission resumes. A send failure retains
+the head for retry. The WebSocket frame buffer is 1536 bytes to accommodate
+JSON escaping within the parameter limit.
+
+A019 carries the existing diagnostic snapshot as eleven numeric parameters:
+epoch time; internal free/largest/minimum free heap; PSRAM free/largest/minimum
+free heap; watched task stack high water mark; flash size, sketch size and
+free OTA space. An expanded diagnostics transfer should use a separate mechanism.
+
+The [current catalogue](log_catalog.md), [CSV](log_catalog.csv) and JSON export
+are generated from `include/log_messages.def` and constants in `include/logger.h`:
+`python scripts/export_log_messages.py`. Use `--check` to validate exports and
+parameter counts at firmware call sites. The [migration map](log_migration.csv)
+links the previous site identifiers to the stable messages.
+
+Examples of invalid `data` fields (the envelope is omitted here):
+
+```json
+{"message": "Door opened", "messageparams": {}}
+{"message": 164, "messageparams": {"p2": 7}}
+{"message": 164, "messageparams": ["192.168.1.20", 7]}
+```
+
+These fail because the ID is text, parameter p1 is missing, or the parameters
+are an array. The updated sample receiver in `test/logger.pl` stores compact
+events without expanding the dictionary.
+
+Run `powershell -NoProfile -ExecutionPolicy Bypass -File test/run_logging.ps1`
+for formatting, type preservation, lifetime, queue/retry/overflow, bounds and
+severity filtering tests. Run `perl test/log_receiver.t` for WebSocket reception,
+persistence and valid/invalid input tests.
+
+MQTT remains a possible future log transport outside the current UI protocol.
 
 ## 14. Controller state machine
 

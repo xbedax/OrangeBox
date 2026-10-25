@@ -88,7 +88,7 @@ bool BoxDiagnostics::snapshotStatistics(const char* source, uint8_t logArea)
     }
 
     storeSnapshot(snapshot);
-    logger.logPrint(SEVERITY_INFO, snapshotToCompactLogJson(snapshot), source, logArea);
+    logger.logPrintFrom(source, A_DIAGNOSTIC_SNAPSHOT, logArea, SEVERITY_INFO, static_cast<uint64_t>(snapshot.timestampEpoch), metricValue(snapshot, KEY_HEAP_INTERNAL_FREE), metricValue(snapshot, KEY_HEAP_INTERNAL_MAX_ALLOC), metricValue(snapshot, KEY_HEAP_INTERNAL_MIN_FREE), metricValue(snapshot, KEY_PSRAM_FREE), metricValue(snapshot, KEY_PSRAM_MAX_ALLOC), metricValue(snapshot, KEY_PSRAM_MIN_FREE), metricValue(snapshot, KEY_TASK_STACK_HWM), metricValue(snapshot, KEY_FLASH_CHIP_SIZE), metricValue(snapshot, KEY_FLASH_SKETCH_SIZE), metricValue(snapshot, KEY_FLASH_FREE_SKETCH_SPACE));
     return true;
 }
 
@@ -242,26 +242,6 @@ String BoxDiagnostics::snapshotToJson(const DiagnosticSnapshot& snapshot) const
     String output;
     serializeJson(doc, output);
     return output;
-}
-
-String BoxDiagnostics::snapshotToCompactLogJson(const DiagnosticSnapshot& snapshot) const
-{
-    char output[LOG_MESSAGE_MAX_LEN + 1] = {};
-    snprintf(output,
-             sizeof(output),
-             "{\"t\":%lu,\"ih\":[%lu,%lu,%lu],\"ps\":[%lu,%lu,%lu],\"stk\":%lu,\"fl\":[%lu,%lu,%lu]}",
-             static_cast<unsigned long>(snapshot.timestampEpoch),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_HEAP_INTERNAL_FREE)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_HEAP_INTERNAL_MAX_ALLOC)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_HEAP_INTERNAL_MIN_FREE)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_PSRAM_FREE)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_PSRAM_MAX_ALLOC)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_PSRAM_MIN_FREE)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_TASK_STACK_HWM)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_FLASH_CHIP_SIZE)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_FLASH_SKETCH_SIZE)),
-             static_cast<unsigned long>(metricValue(snapshot, KEY_FLASH_FREE_SKETCH_SPACE)));
-    return String(output);
 }
 
 String BoxDiagnostics::renderSnapshot(const DiagnosticSnapshot& snapshot,

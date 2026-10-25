@@ -4,14 +4,17 @@
 #include <cstring>
 
 #include "config.h"
+#include "qr_payload.h"
 #include "qr_scanner.h"
 #define CMD_BAUDRATE "hex: 7E 00 07 01 00 2A 02 D8 0F"
 
 
 static QrScanner qrScanner;
 
-static const char configuredActivateCommand[] = QR_SCANNER_ACTIVATE_COMMAND;
-static const char configuredDeactivateCommand[] = QR_SCANNER_DEACTIVATE_COMMAND;
+static  uint8_t configuredActivateCommand[64] = {};
+static  uint8_t configuredDeactivateCommand[64] = {};
+static size_t configuredActivateLength = 0;
+static size_t configuredDeactivateLength = 0;
 
 static char consoleLine[192];
 static size_t consoleLineLen = 0;
@@ -283,14 +286,14 @@ static void printConfig()
   Serial.print("  scan timeout ms: ");
   Serial.println(QR_SCANNER_SCAN_TIMEOUT_MS);
 
-  if (sizeof(configuredActivateCommand) > 1) {
-    printFrameLine("  activate command:", reinterpret_cast<const uint8_t*>(configuredActivateCommand), sizeof(configuredActivateCommand) - 1);
+  if (configuredActivateLength > 0) {
+    printFrameLine("  activate command:", configuredActivateCommand, configuredActivateLength);
   } else {
     Serial.println("  activate command: <empty>");
   }
 
-  if (sizeof(configuredDeactivateCommand) > 1) {
-    printFrameLine("  deactivate command:", reinterpret_cast<const uint8_t*>(configuredDeactivateCommand), sizeof(configuredDeactivateCommand) - 1);
+  if (configuredDeactivateLength > 0) {
+    printFrameLine("  deactivate command:", configuredDeactivateCommand, configuredDeactivateLength);
   } else {
     Serial.println("  deactivate command: <empty>");
   }
@@ -316,13 +319,15 @@ static void printHelp()
   Serial.println();
 }
 
-static void configureScanner()
+static bool configureScanner()
 {
   QrScannerConfig scannerConfig;
-  scannerConfig.activateCommand.bytes = reinterpret_cast<const uint8_t*>(configuredActivateCommand);
-  scannerConfig.activateCommand.length = sizeof(configuredActivateCommand) - 1;
-  scannerConfig.deactivateCommand.bytes = reinterpret_cast<const uint8_t*>(configuredDeactivateCommand);
-  scannerConfig.deactivateCommand.length = sizeof(configuredDeactivateCommand) - 1;
+  if (!QrPayload::parse(QR_SCANNER_ACTIVATE_COMMAND, configuredActivateCommand,
+                        sizeof(configuredActivateCommand), configuredActivateLength)
+      || !QrPayload::parse(QR_SCANNER_DEACTIVATE_COMMAND, configuredDeactivateCommand,
+                           sizeof(configuredDeactivateCommand), configuredDeactivateLength)) return false;
+  scannerConfig.activateCommand = {configuredActivateCommand, configuredActivateLength};
+  scannerConfig.deactivateCommand = {configuredDeactivateCommand, configuredDeactivateLength};
   scannerConfig.switchPin = QR_SCANNER_SWITCH_PIN;
   scannerConfig.switchActiveHigh = QR_SCANNER_SWITCH_ACTIVE_HIGH != 0;
   scannerConfig.activationResponseWindowMs = QR_SCANNER_RESPONSE_WINDOW_MS;
@@ -343,6 +348,7 @@ static void configureScanner()
   }
 
   qrScanner.begin(scannerSerial(), scannerConfig);
+  return true;
 }
 
 static void handleConsoleLine(char* line)
@@ -562,7 +568,7 @@ void setup()
   Serial.println("QR scanner UART stub");
 
   scannerSerial().begin(QR_SCANNER_BAUD, SERIAL_8N1, QR_SCANNER_RX_PIN, QR_SCANNER_TX_PIN);
-  configureScanner();
+  if (!configureScanner()) Serial.println("[qr] invalid scanner command configuration");
   printConfig();
   printHelp();
 }

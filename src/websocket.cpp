@@ -52,7 +52,7 @@ void WebSocketManager::sendMessage(AsyncWebSocketClient* client, const char* com
 int WebSocketManager::registerMessageHandler(const char* command, CommandHandler handler) {
     static size_t cmdIndex = 0;
 
-  Serial.printf("Registering command handler for command: %s\n", command);
+  logger.logPrint(A_REGISTERING_COMMAND_HANDLER_FOR_COMMAND, LOGAREA_COMM, SEVERITY_DEBUG, command);
     if (cmdIndex < sizeof(commands)/sizeof(commands[0])) {
         commands[cmdIndex].name = command;
         commands[cmdIndex].handler = handler;
@@ -70,21 +70,21 @@ void WebSocketManager::handleWebSocketMessage(AsyncWebSocketClient *sender, void
     if (len > 0) {
         DeserializationError error = deserializeJson(request, data, len);
         if (error) {
-            Serial.println("Failed to parse JSON");
+            logger.logPrint(A_FAILED_TO_PARSE_JSON, LOGAREA_COMM, SEVERITY_WARNING);
             return;
         }
         const char* commandReceived = request["_command_"].as<const char*>();
         if (!commandReceived || !*commandReceived || !request["data"].is<JsonObject>()) {
-            Serial.println("Invalid message envelope");
+            logger.logPrint(A_INVALID_MESSAGE_ENVELOPE, LOGAREA_COMM, SEVERITY_WARNING);
             return;
         }
-        if(0 != strcmp(commandReceived, "_pong_")) { Serial.printf(" .. Received command: %s\n", commandReceived);   }  //###
+        if(0 != strcmp(commandReceived, "_pong_")) { logger.logPrint(A_RECEIVED_COMMAND, LOGAREA_COMM, SEVERITY_DEBUG, commandReceived);   }  //###
            //###
         JsonObj data = request["data"].as<JsonObj>();
         //const size_t CMD_COUNT = sizeof(commands)/sizeof(commands[0]);
         for (size_t i = 0; i < CMD_COUNT; i++) {
             if (commands[i].handler && strcmp(commandReceived, commands[i].name) == 0) {
-                if(0 != strcmp(commandReceived, "_pong_")) { Serial.printf(" .. Found handler for command: %s\n", commandReceived);   }  //###
+                if(0 != strcmp(commandReceived, "_pong_")) { logger.logPrint(A_FOUND_HANDLER_FOR_COMMAND, LOGAREA_COMM, SEVERITY_DEBUG, commandReceived);   }  //###
                 if (commands[i].handler) {
                     commands[i].handler(sender, data);
                 }
@@ -92,18 +92,18 @@ void WebSocketManager::handleWebSocketMessage(AsyncWebSocketClient *sender, void
             }
         }
     }
-  Serial.println("Received message with unknown command");
+  logger.logPrint(A_RECEIVED_MESSAGE_WITH_UNKNOWN_COMMAND, LOGAREA_COMM, SEVERITY_WARNING);
 }
 
 void WebSocketManager::onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type,
              void *arg, uint8_t *data, size_t len) {
   switch (type) {
     case WS_EVT_CONNECT:
-      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      logger.logPrint(A_CLIENT_CONNECTED, LOGAREA_COMM, SEVERITY_CRITICAL, client->id(), client->remoteIP().toString().c_str());
       handleWatchdogResponse(client, JsonObj());
       break;
     case WS_EVT_DISCONNECT:
-      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      logger.logPrint(A_CLIENT_DISCONNECTED, LOGAREA_COMM, SEVERITY_CRITICAL, client->id());
       watchdogRemoveEntry(client); // Adjust index if needed
       break;
     case WS_EVT_DATA:
@@ -129,7 +129,7 @@ void WebSocketManager::watchdogSendRequest() {
   JsonDocument payload;
   payload["ping_data"] = "ping";
   notifyClients(COMM_WATCHDOG_PING, payload);
-//  Serial.println("Sent watchdog ping to all clients"); // ###
+// Historical log site retired during the structured logging migration.
 }
 
 void WebSocketManager::watchdogRemoveEntry(AsyncWebSocketClient* client) {
@@ -144,12 +144,12 @@ void WebSocketManager::watchdogRemoveEntry(AsyncWebSocketClient* client) {
 void WebSocketManager::watchdogRemoveEntryIdx(int clientIdx) {
   int fidx = clientIdx;
   if (clientIdx >= freeWatchdogEntry) { 
-    Serial.printf("Invalid client index %d for watchdog removal\n", clientIdx);
+    logger.logPrint(A_INVALID_CLIENT_INDEX_FOR_WATCHDOG_REMOVAL, LOGAREA_COMM, SEVERITY_ERROR, clientIdx);
     return;
   }
   if (watchDogEntries[clientIdx].active) {
     watchDogEntries[clientIdx].active = false;
-    Serial.printf("Removed watchdog entry for client #%u\n", watchDogEntries[clientIdx].clientId->id());
+    logger.logPrint(A_REMOVED_WATCHDOG_ENTRY_FOR_CLIENT, LOGAREA_COMM, SEVERITY_INFO, watchDogEntries[clientIdx].clientId->id());
   }
   while (fidx < freeWatchdogEntry - 1) {
     watchDogEntries[fidx] = watchDogEntries[fidx + 1];
@@ -172,7 +172,7 @@ void WebSocketManager::handleWatchdogResponse(AsyncWebSocketClient* client, Json
     watchDogEntries[cidx].lastPongTime = millis();
     freeWatchdogEntry++;
   } else {
-    Serial.println("Watchdog entry limit reached, cannot track new client");
+    logger.logPrint(A_WATCHDOG_LIMIT, LOGAREA_COMM, SEVERITY_ERROR);
   } 
 } // handleWatchdogResponse
 
@@ -181,7 +181,7 @@ void WebSocketManager::cleanupConnections() {
   for (int i = 0; i < freeWatchdogEntry; i++) {
     if (watchDogEntries[i].active) {
       if (timeoutElapsed (watchDogEntries[i].lastPongTime, watchdogFeedInterval, currentTime)) {
-        Serial.printf("Client #%u timed out, closing connection\n", watchDogEntries[i].clientId->id());
+        logger.logPrint(A_CLIENT_TIMEOUT, LOGAREA_COMM, SEVERITY_WARNING, watchDogEntries[i].clientId->id());
         watchDogEntries[i].clientId->close();
         watchdogRemoveEntryIdx(i);
       }

@@ -2,13 +2,17 @@
 
 V hlavním firmware klávesa `3` ve stavu Home spustí Scan, zobrazí
 `ACTIONLINE_TXT_SCAN` a odpočet na response line. Délku pokusu určuje
-`QR_SCANNER_SCAN_TIMEOUT_MS` (aktuálně 5000 ms). Hvězdička pokus zruší.
-Neplatné číslo zakázky nebo timeout vrací Home; platné číslo spustí Opening.
+`QR_SCANNER_SCAN_TIMEOUT_MS`. Hvězdička pokus zruší.
+Timeout vrací Home; platné číslo spustí Opening. Neznámý nebo neplatný kód
+zobrazí „NESPRÁVNÝ KÓD“ a spustí stejnou prodlevu jako chybné heslo. Po ní
+se automaticky spustí nový pokus o sken. Počítadlo chyb i omezení pokusů
+jsou společné pro heslo a skenování, včetně návratu na Home během prodlevy.
 Ověření používá `CredType::PacketNumber` a existující porovnání prefixu
 `PACKET_NUMBER_MATCH`. Heslem načteným čtečkou se dveře neotevřou.
 
-`BoxScanner` převádí hexadecimální zápis aktivačního a deaktivačního příkazu
-z config.h na bajty UART. Po odchodu ze Scan se čtečka deaktivuje a další
+`BoxScanner` převádí příkazy z config.h na bajty UART: text dovoluje escape
+sekvence (`\r`, `\n`, `\xHH`), binární zápis má předponu `hex:`. Po odchodu
+ze Scan se čtečka deaktivuje a další
 data se nepoužijí k otevření dveří. Aktuálně je deaktivační příkaz prázdný
 a spínací pin nepoužitý: fyzické ukončení svícení/skenování tedy závisí na
 vlastním nastavení čtečky. Pro řízené vypnutí lze doplnit příkaz nebo pin.

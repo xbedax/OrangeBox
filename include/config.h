@@ -1,6 +1,6 @@
 #pragma once
 
-#define _VERSION_ "1.01.f"
+#define _VERSION_ "1.01.g"
 #if __has_include("box_setup.h")
 #include "box_setup.h"
 #endif
@@ -58,8 +58,8 @@
 
 // Password entry settings
 #define PASS_MAX PIN_CODE_LEN
-#define PASS_ERR_DELAY          20          //sec
-#define PASS_ERR_MAXMULTIPLY    4
+#define PASS_ERR_DELAY          5          //sec
+#define PASS_ERR_MAXMULTIPLY    7
 #define PASS_ENTRY_TIMEOUT      30          //sec: if password not fully entered within timeout, the entry is discarded and state changet do HOME
 
 // Ambient light settings
@@ -104,8 +104,8 @@
 #define QR_SCANNER_SWITCH_ACTIVE_HIGH 1
 #endif
 #ifndef QR_SCANNER_ACTIVATE_COMMAND
-// Main firmware decodes these strings as hexadecimal bytes, not ASCII commands.
-#define QR_SCANNER_ACTIVATE_COMMAND "7E 00 08 01 00 02 01 AB CD"
+// Commands accept text (with \r, \n, \t, \0 and \xHH escapes) or "hex: ..." bytes.
+#define QR_SCANNER_ACTIVATE_COMMAND "hex: 7E 00 08 01 00 02 01 AB CD"
 #endif
 #ifndef QR_SCANNER_DEACTIVATE_COMMAND
 #define QR_SCANNER_DEACTIVATE_COMMAND ""
@@ -220,6 +220,7 @@
 #define COMM_CREDS "c_setcred"
 #define COMM_GET_AMBIENT "get_ambient"
 #define COMM_GET_CREDS "get_creds"
+#define COMM_GET_STATUS "get_status"
 #define COMM_OPEN_BOX "opendoor"
 #define COMM_DOOR_STATE "c_doorstate"
 #define COMM_AMBIENT_STATE "c_ambientstate"
@@ -272,9 +273,15 @@
 /*--------------------*/
 
 // Logging settings
-#define SEVERITY_BUSSINESS      1
+#define SEVERITY_DEBUG          1
 #define SEVERITY_INFO           2
-#define SEVERITY_ERROR          3
-#define SEVERITY_WARNING        4
-#define SEVERITY_DEBUG          5
-#define LOGPRINT_SEVERITY_LEVEL SEVERITY_DEBUG
+#define SEVERITY_WARNING        3
+#define SEVERITY_ERROR          4
+#define SEVERITY_CRITICAL       5
+#ifndef LOGPRINT_MIN_SEVERITY
+#define LOGPRINT_MIN_SEVERITY SEVERITY_DEBUG
+#endif
+
+// Hard bound for one log event, including diagnostic snapshots.
+#define LOG_MAX_PARAMS 12
+#define LOG_PARAM_DATA_MAX_LEN 160

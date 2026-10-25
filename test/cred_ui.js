@@ -1,5 +1,7 @@
 // Runs against the actual UI HTML and scripts with a mocked WebSocket transport.
 try {
+  selectedLanguage = 'cs';
+  translatePage();
   function check(condition, message) { if (!condition) throw new Error(message); }
   const codeRows = {
     codeid: [2], codename: ['<Tleskac>'], codevalue: ['HZ1268956754M'],
@@ -60,17 +62,21 @@ try {
   check(sent.command === 'get_creds' && sent.data.credId === 7 && sent.data.credCount === 5,
     'notification preserves pagination');
   const before = document.getElementById('coderows').innerHTML;
-  handleMessage({_command_: 'c_lastresult', data: {lastresult: 'invalid_date_range'}});
+  handleMessage({_command_: 'c_lastresult', data: {lastresult: 'R38'}});
   handleMessage({_command_: 'c_setcred', data: {credType: 'ctCode', success: false, error: 'invalid_date_range'}});
   check(document.getElementById('coderows').innerHTML === before, 'error preserves rows');
-  check(document.getElementById('lastresult').textContent === 'invalid_date_range', 'error shown');
-  handleMessage({_command_: 'c_lastresult', data: {lastresult: '<b>Saved</b>'}});
-  check(document.querySelector('#lastresult b').textContent === 'Saved', 'status replaces innerHTML');
+  check(document.getElementById('lastresult').textContent === tr('R38'), 'credential error is translated');
+  handleMessage({_command_: 'c_lastresult', data: {lastresult: 'R21', params: {door_number: 12}}});
+  check(document.getElementById('lastresult').textContent === formatResult('R21', {door_number: 12}),
+    'dynamic status parameter is interpolated');
+  handleMessage({_command_: 'c_lastresult', data: {lastresult: 'R21', params: {door_number: '<b>unsafe</b>'}}});
+  check(document.getElementById('lastresult').textContent === formatResult('R21', {door_number: '<b>unsafe</b>'}) &&
+    !document.querySelector('#lastresult b'), 'dynamic status parameter is rendered as text');
   handleMessage({_command_: 'c_lastresult', data: {lastresult: ''}});
-  check(document.getElementById('lastresult').innerHTML === '', 'empty status clears previous message');
-  handleMessage({_command_: 'c_lastresult', data: {lastresult: 'Ready'}});
+  check(document.getElementById('lastresult').textContent === '', 'empty status clears previous message');
+  handleMessage({_command_: 'c_lastresult', data: {lastresult: 'R43'}});
   handleMessage({_command_: 'c_lastresult', data: {}});
-  check(document.getElementById('lastresult').textContent === 'Ready', 'missing status does not overwrite text');
+  check(document.getElementById('lastresult').textContent === tr('R43'), 'missing status does not overwrite text');
   handleMessage({_command_: 'c_setcred', data: {credType: 'ctCode', rowCount: 0,
     rows: {codeid: [], codename: [], codevalue: [], codefrom: [], codeto: []}}});
   check(document.querySelectorAll('#coderows tr').length === 0, 'empty response clears table');

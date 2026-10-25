@@ -68,7 +68,6 @@ private:
     void storeSnapshot(const DiagnosticSnapshot& snapshot);
     void snapshotToJsonObject(JsonObject target, const DiagnosticSnapshot& snapshot) const;
     String snapshotToJson(const DiagnosticSnapshot& snapshot) const;
-    String snapshotToCompactLogJson(const DiagnosticSnapshot& snapshot) const;
     String renderSnapshot(const DiagnosticSnapshot& snapshot,
                           DiagnosticFormat format,
                           const char* title) const;

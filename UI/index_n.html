@@ -264,6 +264,7 @@
                     <input
                     type="text"
                     name="pinname"
+					maxlength="10"
                     id="pinname"
                     placeholder=""
 					data-i18n-placeholder="L_Pin_name"
@@ -432,6 +433,13 @@
     <script src="js/websoc.js"></script>
 	<script src="js/translations.js"></script>
     <script>
+        function formatResult(code, params = {}) {
+            const values = params && typeof params === "object" ? params : {};
+            return tr(code).replace(/<([a-z_]+)>/g, (placeholder, name) =>
+                Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : placeholder);
+        }
+    </script>
+    <script>
         const pinsInTable = 15;
         const connIds = ["stateOffline", "statePause", "stateOnline"];
 		const codesInTable = 15;
@@ -536,7 +544,9 @@
             }
             if (command == "c_lastresult") {
                 if (typeof myObj.data.lastresult === "string") {
-                    document.getElementById("lastresult").innerHTML = myObj.data.lastresult;
+                    document.getElementById("lastresult").textContent = myObj.data.lastresult === ""
+                        ? ""
+                        : formatResult(myObj.data.lastresult, myObj.data.params);
                 }
                 return;
             }
@@ -617,7 +627,7 @@
 			data["lightId"] = lightNum;
 			postFormData(data, "get_ambient");
 		}
-		function getStatusContent () {
+		function getStatus () {
 			const data = {};  
 			data["dummy"] = "-"
 			postFormData(data, "get_status");
@@ -671,7 +681,7 @@
 			getCreds(0, codesInTable, 2);
 			getDoorState(0);
 			getAmbientState(0);
-			getStatusContent();
+			getStatus();
 			addRowHandlers("pin");
 			addRowHandlers("code");
 			selectedLanguage = getLanguage();

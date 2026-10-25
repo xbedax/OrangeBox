@@ -40,3 +40,7 @@ secrets.*
 credentials.*
 wifi_config.*
 box_setup.h
+
+# Local logging refactor backup and Python cache
+/backups/logging_refactor_20261025/
+scripts/__pycache__/

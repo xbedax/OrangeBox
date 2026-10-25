@@ -15,7 +15,7 @@
 //              wifi reconnect
 //              divided into libraries
 //              error handling
-//              password pprocessing
+//              pin pprocessing
 //              non volatile storage
 //              display UI
 //              main state machine
@@ -24,10 +24,12 @@
 //              reverse SSH tunnel VPN
 //              NTP time sync
 //              RTC
+//              parcel numbers
 //              internal diagnostics
 //              reader
 //              protocol cleanup
 //              translation
+//              bidirectional VPN
 
 #define ELEGANTOTA_USE_ASYNC_WEBSERVER 1
 
@@ -44,6 +46,7 @@
 #include "websocket.h"
 #include "pass_store.h"
 #include "cred_protocol.h"
+#include "result_code.h"
 #include "box_display.h"
 #include "camera.h"
 #include "timer.h"
@@ -123,24 +126,6 @@ BoxRtc boxRtc;
 //CameraHandler cameraHandler; // Camera handler instance
 DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
 
-namespace ResultCode {
-    constexpr char missingDoorNumber[] = "R17";
-    constexpr char invalidDoorNumber[]     = "R18";
-    constexpr char invalidDoorFormat[]    = "R19";
-    constexpr char doorOpen[] = "R20";
-    constexpr char openingDoorNumber[] = "R21";
-    constexpr char doorClosed[] = "R22";
-    constexpr char snapshotStored[] = "R23";
-    constexpr char snapshotFailed[] = "R24";
-    constexpr char cameraError[] = "R25";
-    constexpr char presenceNotProvided[] = "R26";
-    constexpr char presenceInvalid[] = "R27";
-    constexpr char operatedLocally  [] = "R28";
-    constexpr char imageNotReady[] = "R29";
-    constexpr char doorQueueFull[] = "R30";
-}
-
-
 void handleDueActions(uint8_t action, const char* arg);
 void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis);
 void refreshVpnLocalHost();
@@ -215,7 +200,10 @@ void sendLastResult(AsyncWebSocketClient* recipient, JsonDocument& response) {
     if (!response[MSG_LASTRESULT].is<const char*>()) return;
     JsonDocument status;
     status[MSG_LASTRESULT] = response[MSG_LASTRESULT];
+    if (response["lastresult_params"].is<JsonObjectConst>())
+        status["params"].set(response["lastresult_params"]);
     response.remove(MSG_LASTRESULT);
+    response.remove("lastresult_params");
     webSocketManager.sendMessage(recipient, COMM_LASTRESULT, status);
 }
 
@@ -249,9 +237,28 @@ void notifyAmbientChange() {
 // Websocket get_ambient request handler.
 void handleGetAmbient(AsyncWebSocketClient *sender, JsonObj data)
 {
+    logger.logPrint(A_STATE_READ, LOGAREA_OPERATION, SEVERITY_DEBUG, "ambient");
     (void)data;
     sendAmbientState(sender, gpioHal.getAmbient());
 }
+
+// Websocket get_status request handler.
+void handleGetStatus(AsyncWebSocketClient *sender, JsonObj data)
+{
+  logger.logPrint(A_STATE_READ, LOGAREA_OPERATION, SEVERITY_DEBUG, "status");
+  sendDoorState(sender, 0, gpioHal.readDoorState(0)); // Example: sending status of door 0
+  JsonDocument response;
+  if (boxStateMachine.isExternalEnabled()) {
+    response[COMM_OPEN_BOX] = MSG_ENABLE;
+    webSocketManager.sendMessage(sender, COMM_ENORDIS, response);
+    return;
+  } else {
+    response[COMM_OPEN_BOX] = MSG_DISABLE;
+    webSocketManager.sendMessage(sender, COMM_ENORDIS, response);
+    return;
+  }
+} //handleGetStatus
+
 
 //Get doors state request:
 void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
@@ -262,9 +269,9 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
     JsonVariantConst doorNumValue = data[MSG_DOORNUM];
     
     if (doorNumValue.isNull()) {
-        logger.logPrint(SEVERITY_ERROR, "Error: Missing door number in request", BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_MISSING_DOOR_NUMBER, LOGAREA_OPERATION, SEVERITY_WARNING);
         response[MSG_LASTRESULT] = ResultCode::missingDoorNumber;
-        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+        sendLastResult(sender, response);
         return;
     }
 
@@ -272,51 +279,52 @@ void handleGetDoors(AsyncWebSocketClient *sender, JsonObj data)
       const char* doorNumStr = doorNumValue.as<const char*>();
       char* endptr;
       if (doorNumStr == nullptr || doorNumStr[0] == '\0') {
-        logger.logPrint(SEVERITY_ERROR, "Error: Missing door number in request", BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_MISSING_DOOR_NUMBER, LOGAREA_OPERATION, SEVERITY_WARNING);
         response[MSG_LASTRESULT] = ResultCode::missingDoorNumber;
-        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+        sendLastResult(sender, response);
         return;
       }
       lnum = strtoul(doorNumStr, &endptr, 10);
       if (*endptr != '\0') {
-        logger.logPrint(SEVERITY_ERROR, "Error: invalid door number" + String(doorNumStr), BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_INVALID_DOOR_NUMBER_TEXT, LOGAREA_OPERATION, SEVERITY_WARNING, doorNumStr);
         response[MSG_LASTRESULT] = ResultCode::invalidDoorNumber;
-        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+        sendLastResult(sender, response);
         return;
       }
     } else if (doorNumValue.is<unsigned long>()) {
       lnum = doorNumValue.as<unsigned long>();
     } else {
-      logger.logPrint(SEVERITY_ERROR, "Error: invalid door format", BOX_HOST_NAME, LOGAREA_ACCESS);
+      logger.logPrint(A_INVALID_DOOR_FORMAT, LOGAREA_OPERATION, SEVERITY_WARNING);
       response[MSG_LASTRESULT] = ResultCode::invalidDoorFormat;
-      webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+      sendLastResult(sender, response);
       return;
     }
 
     if (lnum > 254 ) { // Door 0 is valid; 255 is reserved for unknown/special values
-      logger.logPrint(SEVERITY_ERROR, "txt_err_invalid_door " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
+      logger.logPrint(A_INVALID_DOOR_NUMBER, LOGAREA_OPERATION, SEVERITY_WARNING, lnum);
       response[MSG_LASTRESULT] = ResultCode::invalidDoorNumber;
-      webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+      sendLastResult(sender, response);
       return;
     }
     doorNum = static_cast<uint8_t>(lnum);
-    Serial.println("handleGetDoors called for door number: " + String(doorNum)); //###
+    logger.logPrint(A_DOOR_STATE_REQUEST, LOGAREA_OPERATION, SEVERITY_DEBUG, doorNum); //###
 
 //    if (doorNum < DOOR_COUNT) {
     uint8_t isOpen = gpioHal.readDoorState(doorNum);
     if(isOpen != DOOR_UNKNOWN) {
       if (isOpen == DOOR_MIXED) {
-        logger.logPrint(SEVERITY_WARNING, "Warning: Mixed state detected for door " + String(doorNum), BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_DOOR_MIXED_STATE, LOGAREA_OPERATION, SEVERITY_WARNING, doorNum);
       }
       sendDoorState(sender, doorNum, isOpen);
     } else {
-      logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNum), BOX_HOST_NAME, LOGAREA_ACCESS);
+      logger.logPrint(A_INVALID_DOOR_NUMBER, LOGAREA_OPERATION, SEVERITY_WARNING, doorNum);
     }
 }
 
 // Credential handlers share parsing/formatting with the native protocol tests.
 void handleGetCreds(AsyncWebSocketClient* sender, JsonObj data)
 {
+  logger.logPrint(A_STATE_READ, LOGAREA_OPERATION, SEVERITY_DEBUG, "credentials");
   JsonDocument response;
   buildCredResponse(credStorage, data, response);
   sendLastResult(sender, response);
@@ -325,6 +333,7 @@ void handleGetCreds(AsyncWebSocketClient* sender, JsonObj data)
 
 void handleGetDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
 {
+  logger.logPrint(A_STATE_READ, LOGAREA_OPERATION, SEVERITY_DEBUG, "diagnostics");
   (void)data;
   JsonDocument response;
   response["html"] = boxDiagnostics.showStatistics(DiagnosticFormat::Html);
@@ -347,6 +356,7 @@ void handleSnapshotDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
 
 void handleGetDiagnosticSnapshots(AsyncWebSocketClient *sender, JsonObj data)
 {
+  logger.logPrint(A_STATE_READ, LOGAREA_OPERATION, SEVERITY_DEBUG, "diagnostic snapshots");
   (void)data;
   JsonDocument response;
   response["count"] = boxDiagnostics.snapshotCount();
@@ -359,6 +369,7 @@ void handleGetDiagnosticSnapshots(AsyncWebSocketClient *sender, JsonObj data)
 
 void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
 {
+  logger.logPrint(A_OPEN_COMMAND_RECEIVED, LOGAREA_OPERATION, SEVERITY_CRITICAL);
   const char* doorNumStr = data["doornum"];
   char presenceCode[PRESENCE_CODE_LENGTH + 1] = {0};
 
@@ -367,9 +378,9 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
     char* endptr;
     unsigned long lnum = strtoul(doorNumStr, &endptr, 10);
     if (lnum > 254 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
-      logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(lnum), BOX_HOST_NAME, LOGAREA_ACCESS);
-      response["lastresult"] = ResultCode::invalidDoorNumber + String(lnum);
-      webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+      logger.logPrint(A_INVALID_DOOR_NUMBER, LOGAREA_OPERATION, SEVERITY_WARNING, lnum);
+      response[MSG_LASTRESULT] = ResultCode::invalidDoorNumber;
+      sendLastResult(sender, response);
       return;
     }
     if (data[MSG_PRESENCECODE] != nullptr) {
@@ -378,27 +389,29 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
     if (data[MSG_CHECKPRESENCE] != nullptr) {
       bool checkPresence = data[MSG_CHECKPRESENCE];
       if (checkPresence && strlen(presenceCode) == 0) {
-        logger.logPrint(SEVERITY_ERROR, "Error: Presence code required but not provided", BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_PRESENCE_CODE_REQUIRED, LOGAREA_OPERATION, SEVERITY_WARNING);
         response[MSG_LASTRESULT] = ResultCode::presenceNotProvided;
-        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+        sendLastResult(sender, response);
         return;
       }
       if(checkPresence && (!boxStateMachine.isPresenceCodeValid() || strcmp(presenceCode, boxStateMachine.getPresenceCode()) != 0)) {
-        logger.logPrint(SEVERITY_ERROR, "Error: Invalid presence code " + String(presenceCode), BOX_HOST_NAME, LOGAREA_ACCESS);
-        response[MSG_LASTRESULT] = ResultCode::presenceInvalid + String(presenceCode);
-        webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+        logger.logPrint(A_PRESENCE_CODE_INVALID, LOGAREA_OPERATION, SEVERITY_WARNING);
+        response[MSG_LASTRESULT] = ResultCode::presenceInvalid;
+        sendLastResult(sender, response);
         return;
       }
     }
     uint8_t num = static_cast<uint8_t>(lnum);
 
     if (!webOpenRequests || xQueueSend(webOpenRequests, &num, 0) != pdTRUE) {
+      logger.logPrint(A_DOOR_QUEUE_FAILED, LOGAREA_SYSTEM, SEVERITY_ERROR, num);
       response[MSG_LASTRESULT] = ResultCode::doorQueueFull;
     } else {
-      logger.logPrint(SEVERITY_INFO, "Opening box door number " + String(num), BOX_HOST_NAME, LOGAREA_ACCESS);
-      response[MSG_LASTRESULT] = ResultCode::openingDoorNumber + String(num);
+      logger.logPrint(A_DOOR_OPEN_QUEUED, LOGAREA_OPERATION, SEVERITY_INFO, num);
+      response[MSG_LASTRESULT] = ResultCode::openingDoorNumber;
+      response["lastresult_params"]["door_number"] = num;
     }
-    webSocketManager.sendMessage(sender, COMM_LASTRESULT, response);
+    sendLastResult(sender, response);
   }
 }
 
@@ -544,16 +557,13 @@ bool startVpn() {
   vpnConfig.debugEnabled = false;
 
   if (!vpnManager.begin(vpnConfig)) {
-    logger.logPrint(SEVERITY_ERROR, "VPN begin failed: " + vpnManager.getStateString(), BOX_HOST_NAME, LOGAREA_COMM);
+    logger.logPrint(A_VPN_BEGIN_FAILED, LOGAREA_COMM, SEVERITY_ERROR, vpnManager.getStateString());
     return false;
   }
 
-  logger.logPrint(SEVERITY_INFO,
-                  "VPN configured: 127.0.0.1:" + String(VPN_REMOTE_BIND_PORT) +
-                  " -> " + String(vpnLocalHost) + ":80",
-                  BOX_HOST_NAME, LOGAREA_COMM);
+  logger.logPrint(A_VPN_CONFIGURED, LOGAREA_COMM, SEVERITY_INFO, VPN_REMOTE_BIND_PORT, vpnLocalHost);
 
-  logger.logPrint(SEVERITY_INFO, "VPN connection scheduled", BOX_HOST_NAME, LOGAREA_COMM);
+  logger.logPrint(A_VPN_SCHEDULED, LOGAREA_COMM, SEVERITY_INFO);
   return true;
 }
 
@@ -580,77 +590,77 @@ void setup() {
   Serial.begin(9600);
   logger.begin(&webSocketLogTransport);
   boxDiagnostics.begin();
-  Serial.println("\n\n --- B O X   prototype starting! ---\n");
+  logger.logPrint(A_RESTART, LOGAREA_SYSTEM, SEVERITY_CRITICAL);
 
 // Initialize I2C
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   Wire.setClock(100000);  // klasika, zadny spech
 
   if (boxRtc.begin(RTC_I2C_ADDRESS, &Wire)) {
-    Serial.print("RTC OSF flag: ");
-    Serial.println(boxRtc.hasLostPowerFlag() ? "set" : "clear");
+    logger.logPrint(A_RTC_OSF, LOGAREA_SYSTEM, SEVERITY_DEBUG, boxRtc.hasLostPowerFlag());
+
     if (boxRtc.setSystemTimeFromRtc()) {
       if (boxRtc.hasLostPowerFlag()) {
-        logger.logPrint(SEVERITY_WARNING, "System time loaded from RTC with OSF set; waiting for NTP correction\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+        logger.logPrint(A_SYSTEM_TIME_LOADED_FROM_RTC_WITH_OSF_SET, LOGAREA_SYSTEM, SEVERITY_WARNING);
       } else {
-        logger.logPrint(SEVERITY_INFO, "System time loaded from RTC\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+        logger.logPrint(A_SYSTEM_TIME_LOADED_FROM_RTC, LOGAREA_SYSTEM, SEVERITY_INFO);
         recordStartTime("RTC");
       }
     } else {
-      logger.logPrint(SEVERITY_WARNING, "RTC available, but time is not trusted yet\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+      logger.logPrint(A_RTC_AVAILABLE_BUT_TIME_IS_NOT_TRUSTED_YET, LOGAREA_SYSTEM, SEVERITY_WARNING);
     }
   } else {
-    logger.logPrint(SEVERITY_WARNING, "RTC not found at 0x" + String(RTC_I2C_ADDRESS, HEX) + "\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+    logger.logPrint(A_RTC_NOT_FOUND_AT_X, LOGAREA_SYSTEM, SEVERITY_WARNING, String(RTC_I2C_ADDRESS, HEX));
   }
 
   time_t boxNow = time(nullptr);
-  Serial.print("Box current time epoch: ");
-  Serial.println(static_cast<long>(boxNow));
+  logger.logPrint(A_CURRENT_EPOCH, LOGAREA_SYSTEM, SEVERITY_DEBUG, static_cast<long>(boxNow));
+
 
   struct tm boxTimeInfo;
   if (localtime_r(&boxNow, &boxTimeInfo) != nullptr) {
     char boxTimeBuffer[24];
     if (strftime(boxTimeBuffer, sizeof(boxTimeBuffer), "%Y-%m-%d %H:%M:%S", &boxTimeInfo) > 0) {
-      Serial.print("Box current time: ");
-      Serial.println(boxTimeBuffer);
+      logger.logPrint(A_CURRENT_TIME, LOGAREA_SYSTEM, SEVERITY_DEBUG, boxTimeBuffer);
+
     }
   }
 
   boxDisplay.displayInit(&gpioHal);
-  logger.logPrint(SEVERITY_INFO, "Display initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  logger.logPrint(A_DISPLAY_INITIALIZED, LOGAREA_SYSTEM, SEVERITY_INFO);
 
-  logger.logPrint(SEVERITY_INFO, "--- BOX prototype ---\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  logger.logPrint(A_BOX_PROTOTYPE, LOGAREA_SYSTEM, SEVERITY_DEBUG);
 
   // Initialize timer manager and GPIO HAL (GPIO HAL needs timer manager for scheduling future tasks, e.g. to turn off the lock after some time)
   timerManager.initializeTimerManager(handleDueActions);
   //GpioHAL::ambientPin = AMBIENT_PIN; // Set the ambient light pin in GpioHAL before initializing it
   gpioHal.initializeGpioHAL(&timerManager, initialDoorMappings, AMBIENT_PIN, sizeof(initialDoorMappings) / sizeof(initialDoorMappings[0]));
-  logger.logPrint(SEVERITY_INFO, "-HAL initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  logger.logPrint(A_HAL_INITIALIZED, LOGAREA_SYSTEM, SEVERITY_INFO);
   // Initializa keyboard (null operation at present)
   boxKeyboard.keyboardInit();
   keyboardState.keyboardMode = KEYBOARD_MODE_COMMAND;
   keyboardState.currentPasswordLen = 0;
   keyboardState.passwordComplete = false;
   keyboardState.cancelPressed = false;
-  logger.logPrint(SEVERITY_INFO, "--Keyboard initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  logger.logPrint(A_KEYBOARD_INITIALIZED, LOGAREA_SYSTEM, SEVERITY_INFO);
   scannerUart.begin(QR_SCANNER_BAUD, SERIAL_8N1, QR_SCANNER_RX_PIN, QR_SCANNER_TX_PIN);
   if (!boxScanner.begin(scannerUart)) {
-    logger.logPrint(SEVERITY_ERROR, "Scanner command configuration is invalid", BOX_HOST_NAME, LOGAREA_SYSTEM);
+    logger.logPrint(A_SCANNER_COMMAND_CONFIGURATION_IS_INVALID, LOGAREA_SYSTEM, SEVERITY_ERROR);
   }
   boxStateMachine.initialize();
   boxStateMachine.setStateChangeCallback(onStateChanged);
   boxStateMachine.setUIUpdateCallback(UIcontrolCallback);
-  logger.logPrint(SEVERITY_INFO, "---State machine initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  logger.logPrint(A_STATE_MACHINE_INITIALIZED, LOGAREA_SYSTEM, SEVERITY_INFO);
   // Create mutex for thread safety
   imageMutex = xSemaphoreCreateMutex();
 
   // Initialize camera
   //initCamera();
-  //logger.logPrint(SEVERITY_INFO, "Camera initialized\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  // Historical log site retired during the structured logging migration.
 
   // Register callback BEFORE starting preview
 //  myCAM.registerCallBack(captureCallback, 200, stopCallback);
-//  logger.logPrint(SEVERITY_INFO, "Camera callback reg\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+// Historical log site retired during the structured logging migration.
 
   
   // Connect to WiFi
@@ -658,44 +668,44 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.begin(ssid, password);
-  logger.logPrint(SEVERITY_INFO, "Starting WiFi\n", BOX_HOST_NAME, LOGAREA_COMM);
+  logger.logPrint(A_STARTING_WIFI, LOGAREA_COMM, SEVERITY_INFO);
 
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
-    Serial.print(".");
+    logger.logPrint(A_WIFI_CONNECTING, LOGAREA_COMM, SEVERITY_DEBUG);
     attempts++;
   }
 
   if (WiFi.status() == WL_CONNECTED) {
-    logger.logPrint(SEVERITY_INFO, "WiFi connected!\n", BOX_HOST_NAME, LOGAREA_COMM);
+    logger.logPrint(A_WIFI_CONNECTED, LOGAREA_COMM, SEVERITY_WARNING);
     wifiState = 1;
     boxDisplay.setLinkStatus(ONLINE_STATUS_WIFI);
     IPAddress ip = WiFi.localIP();
     char ipStr[18];         // Max IP string length is 15 chars + null terminator
     sprintf(ipStr, "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3]);
-    logger.logPrint(SEVERITY_INFO, ipStr, BOX_HOST_NAME, LOGAREA_COMM);
-    Serial.print(ipStr);
-    Serial.print("Open this URL: http://");
-    Serial.println(WiFi.localIP());
+    logger.logPrint(A_WIFI_ADDRESS, LOGAREA_COMM, SEVERITY_DEBUG, ipStr);
+
+    logger.logPrint(A_WEB_URL, LOGAREA_COMM, SEVERITY_DEBUG, WiFi.localIP().toString());
+
     boxDisplay.setCommunicationStatus(COMMUNICATION_STATUS_OK);
   } else {
     wifiState = 0;
     boxDisplay.setLinkStatus(ONLINE_STATUS_OFFLINE);
-    logger.logPrint(SEVERITY_ERROR, "WiFi FAILED!\n", BOX_HOST_NAME, LOGAREA_COMM);
+    logger.logPrint(A_WIFI_FAILED, LOGAREA_COMM, SEVERITY_WARNING);
   }
 
   if (boxRtc.configureNtp(ntpServer, gmtOffset_sec, daylightOffset_sec, RTC_NTP_SYNC_INTERVAL_MS)) {
-    logger.logPrint(SEVERITY_INFO, "NTP synchronization scheduled\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+    logger.logPrint(A_NTP_SYNCHRONIZATION_SCHEDULED, LOGAREA_SYSTEM, SEVERITY_INFO);
   } else {
-    logger.logPrint(SEVERITY_WARNING, "NTP synchronization not configured\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+    logger.logPrint(A_NTP_SYNCHRONIZATION_NOT_CONFIGURED, LOGAREA_SYSTEM, SEVERITY_WARNING);
   }
 
 
   // Initialize credential storage after the RTC load/NTP setup, so date-limited
   // records are evaluated against the best available time.
   credStorage.begin();
-  logger.logPrint(SEVERITY_INFO, "Credential storage init\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  logger.logPrint(A_CREDENTIAL_STORAGE_INIT, LOGAREA_SYSTEM, SEVERITY_INFO);
 
   // Register webserver routes
   registerWebServerRoutes(webserver);
@@ -705,15 +715,15 @@ void setup() {
   
   // Start preview mode with 320x240 resolution
   // CAM_VIDEO_MODE_3 = 320x240 according to the enum
-  //Serial.println("Starting preview...");
+  // Historical log site retired during the structured logging migration.
   //myCAM.startPreview(CAM_VIDEO_MODE_3);    // Something strange here: header used by adruino IDE lists many modes, mode 3 means 320x240
   //myCAM.startPreview(CAM_VIDEO_MODE_0);     // header used by Platformio lists only 4 modes, mode 0 means 320x240
-  //logger.logPrint(SEVERITY_INFO, "Streaming active\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  // Historical log site retired during the structured logging migration.
 
 //Websocket stuff initialization
 
   webSocketManager.initializeWebSocket(&webserver);
-  Serial.println("WebSocket initialized successfully");
+
   webSocketManager.registerMessageHandler(COMM_SET_CRED,   handleSetCred);
   webSocketManager.registerMessageHandler(COMM_OPEN_BOX,   handleOpenBox);                  // open door
   webSocketManager.registerMessageHandler(COMM_GET_CREDS,   handleGetCreds);                  // get credential list
@@ -722,11 +732,11 @@ void setup() {
   webSocketManager.registerMessageHandler(COMM_GET_DIAGNOSTICS, handleGetDiagnostics);
   webSocketManager.registerMessageHandler(COMM_SNAPSHOT_DIAGNOSTICS, handleSnapshotDiagnostics);
   webSocketManager.registerMessageHandler(COMM_GET_DIAGNOSTIC_SNAPSHOTS, handleGetDiagnosticSnapshots);
-
-  logger.logPrint(SEVERITY_INFO, "WebSocket Initialized\n", BOX_HOST_NAME, LOGAREA_COMM);
+  webSocketManager.registerMessageHandler(COMM_GET_STATUS, handleGetStatus);
+  logger.logPrint(A_WEBSOCKET_INITIALIZED, LOGAREA_COMM, SEVERITY_INFO);
   // Start server  
   webserver.begin();
-  logger.logPrint(SEVERITY_INFO, "Webserver started!\n", BOX_HOST_NAME, LOGAREA_COMM);
+  logger.logPrint(A_WEBSERVER_STARTED, LOGAREA_COMM, SEVERITY_INFO);
   startVpn();
 
   /*
@@ -735,7 +745,7 @@ void setup() {
   digitalWrite(ledPin, LOW);
   pinMode(doorPin, INPUT);
   */
-  logger.logPrint(SEVERITY_INFO, "SETUP COMPLETE!\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+  logger.logPrint(A_SETUP_COMPLETE, LOGAREA_SYSTEM, SEVERITY_INFO);
   boxDiagnostics.snapshotStatistics();
 
 }  //setup
@@ -773,10 +783,10 @@ void handleDueActions(uint8_t action, const char* arg) {
         uint8_t doorNum = atoi(arg);
         uint8_t isOpen = gpioHal.readDoorState(doorNum);
         if (isOpen == DOOR_MIXED) {
-          logger.logPrint(SEVERITY_WARNING, "Warning: Mixed state detected for door " + String(doorNum) + " during notification", BOX_HOST_NAME, LOGAREA_ACCESS);
+          logger.logPrint(A_DOOR_MIXED_NOTIFICATION, LOGAREA_OPERATION, SEVERITY_WARNING, doorNum);
         }
         if (isOpen == DOOR_UNKNOWN) {
-          logger.logPrint(SEVERITY_ERROR, "Error: Invalid door number " + String(doorNum) + " in notification", BOX_HOST_NAME, LOGAREA_ACCESS);
+          logger.logPrint(A_INVALID_DOOR_NUMBER_IN_NOTIFICATION, LOGAREA_OPERATION, SEVERITY_WARNING, doorNum);
         }
         sendDoorState(nullptr, doorNum, isOpen);
 
@@ -790,24 +800,24 @@ void handleDueActions(uint8_t action, const char* arg) {
       }
       break;
     case LOCK_DEACTIVATE: {
-        logger.logPrint(SEVERITY_DEBUG, arg, BOX_HOST_NAME, LOGAREA_SYSTEM);
+        logger.logPrint(A_LOCK_TIMER_PAYLOAD, LOGAREA_SYSTEM, SEVERITY_DEBUG, arg);
         uint8_t lockNum = atoi(arg);
         uint8_t result = gpioHal.lockDeactivate(lockNum);
         if (result != DOOR_UNKNOWN) {
-          logger.logPrint(SEVERITY_INFO, "Lock " + String(lockNum) + " deactivated\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+          logger.logPrint(A_LOCK_DEACTIVATED, LOGAREA_SYSTEM, SEVERITY_INFO, lockNum);
         } else {
-          logger.logPrint(SEVERITY_ERROR, "Error: Invalid lock number in timer callback: " + String(lockNum), BOX_HOST_NAME, LOGAREA_ACCESS);
+          logger.logPrint(A_INVALID_LOCK_NUMBER_IN_TIMER_CALLBACK, LOGAREA_SYSTEM, SEVERITY_ERROR, lockNum);
         }      
       }
       break;
 
     case AMBIENT_DEACTIVATE: 
-      logger.logPrint(SEVERITY_INFO, "Deactivating ambient light\n", BOX_HOST_NAME, LOGAREA_SYSTEM);
+      logger.logPrint(A_DEACTIVATING_AMBIENT_LIGHT, LOGAREA_SYSTEM, SEVERITY_INFO);
       gpioHal.ambientOff();
       break;
     
     case PASSWORD_TIMEOUT:
-        logger.logPrint(SEVERITY_INFO, "Password timeout passed\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_PASSWORD_TIMEOUT_PASSED, LOGAREA_SYSTEM, SEVERITY_INFO);
         {
           BoxEventData event = {};
           event.eventType = BoxEventType::PasswordTimeout;
@@ -816,7 +826,7 @@ void handleDueActions(uint8_t action, const char* arg) {
       break;
 
     default:
-      logger.logPrint(SEVERITY_ERROR, "Unknown due action called", BOX_HOST_NAME, LOGAREA_SYSTEM);
+      logger.logPrint(A_UNKNOWN_DUE_ACTION_CALLED, LOGAREA_SYSTEM, SEVERITY_ERROR);
     }
      
     // Add more actions as needed
@@ -826,7 +836,7 @@ void handleDueActions(uint8_t action, const char* arg) {
 void checkLinkStatus() {
   if (WiFi.status() != WL_CONNECTED ) {
     if (wifiState) {
-      Serial.println("WiFi lost");
+      logger.logPrint(A_WIFI_LOST, LOGAREA_COMM, SEVERITY_WARNING);
       vpnManager.disconnect();
       wifiRecoveryResetMillis = currentMillis;
       wifiRecoveryActive = true;
@@ -839,7 +849,7 @@ void checkLinkStatus() {
     } else if (timeoutElapsed(wifiRecoveryResetMillis, WIFI_RECOVERY_RESET_INTERVAL_MS, currentMillis)) {
       // Auto reconnect can remain stuck after an AP disappears. Restart the
       // association only after allowing the previous attempt to complete.
-      Serial.println("Restarting WiFi association");
+      logger.logPrint(A_RESTARTING_WIFI_ASSOCIATION, LOGAREA_COMM, SEVERITY_INFO);
       WiFi.disconnect(false, false);
       WiFi.begin(ssid, password);
       wifiRecoveryResetMillis = currentMillis;
@@ -849,7 +859,7 @@ void checkLinkStatus() {
     boxDisplay.setLinkStatus(ONLINE_STATUS_OFFLINE);
   } else {
     if (!wifiState) {
-      Serial.println("WiFi restored");
+      logger.logPrint(A_WIFI_RESTORED, LOGAREA_COMM, SEVERITY_WARNING);
       wifiState = 1;
       startVpn();
     }
@@ -891,6 +901,12 @@ void loop() {
 
   webSocketManager.update(currentMillis);
   vpnManager.update();
+  static bool vpnWasConnected = false;
+  const bool vpnConnected = vpnManager.isConnected();
+  if (vpnConnected != vpnWasConnected) {
+    logger.logPrint(vpnConnected ? A_VPN_CONNECTED : A_VPN_DISCONNECTED, LOGAREA_COMM, SEVERITY_WARNING);
+    vpnWasConnected = vpnConnected;
+  }
   ElegantOTA.loop();
   if (!linkStatusStarted || timeoutElapsed(linkStatusMillis, linkStatusInterval, currentMillis)) {
     checkLinkStatus();

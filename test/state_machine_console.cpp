@@ -1,3 +1,4 @@
+#include "logger.h"
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
@@ -189,3 +190,7 @@ int main()
 
     return 0;
 }
+
+Logger logger;
+bool Logger::shouldLog(uint8_t) const { return false; }
+void Logger::emit(const LogEvent&) {}

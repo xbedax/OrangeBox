@@ -47,6 +47,7 @@ enum class BoxEventType {
 
     ScannerCodeReceived = 400,
     ScannerFailed = 401,
+    ScannerInvalidCode = 402,
     
     // Generic events
     Tick = 10,                  // Regular update tick
@@ -74,6 +75,7 @@ struct BoxStateContext {
     uint8_t doorToOpen;
     bool credVerified;
     bool scannedCredVerified;
+    bool retryScanAfterBadCode;
     uint32_t scanStartedAt;
     uint8_t badPasswordCount;
     uint32_t doorOpenStartedAt;
@@ -139,6 +141,7 @@ public:
     typedef void (*UIUpdateCallback)(uint8_t action);
     void setStateChangeCallback(StateChangeCallback callback);
     void setUIUpdateCallback(UIUpdateCallback callback) { onUIUpdate = callback; }
+    bool isExternalEnabled() const;
     
 private:
     BoxStateContext context;
@@ -188,6 +191,7 @@ private:
     bool areAllDoorsClosed() const;
     void enableExternal();
     void disableExternal();
+    
 };
 
 #endif // STATE_MACHINE_H

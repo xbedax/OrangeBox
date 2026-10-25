@@ -92,7 +92,7 @@ static CacheRecord toCacheRecord(const CredRecord& rec) {
 bool CredStorage::updateCred(const CacheRecord& rec) {
 
     if (!validateCred(rec)) {
-        Serial.println("[CredStore] updateCred: invalid credential");
+        logger.logPrint(A_CREDSTORE_UPDATECRED_INVALID_CREDENTIAL, LOGAREA_ACCESS, SEVERITY_ERROR);
         return false;
     }
 
@@ -112,7 +112,7 @@ bool CredStorage::updateCred(const CacheRecord& rec) {
 // Add new credential, return true if added successfully, false otherwise (e.g. invalid credential or storage failure)
 uint32_t CredStorage::addCred(const CacheRecord& rec) {
     if (!validateCred(rec)) {
-        Serial.println("[CredStore] addCred: invalid credential");
+        logger.logPrint(A_CREDSTORE_ADDCRED_INVALID_CREDENTIAL, LOGAREA_ACCESS, SEVERITY_ERROR);
         return 0;
     }
     CacheRecord newRec = rec;
@@ -127,7 +127,7 @@ uint32_t CredStorage::addCred(const CacheRecord& rec) {
     credRec.doorNum = rec.doorNum;
     uint32_t newId = writeCred(credRec);
     if (newId == 0) {
-        Serial.println("[CredStore] addCred: failed to write new credential");
+        logger.logPrint(A_CREDSTORE_ADDCRED_FAILED_TO_WRITE_NEW_CREDENTIAL, LOGAREA_ACCESS, SEVERITY_ERROR);
         return 0;
     }
     newRec.credId = newId;
@@ -139,9 +139,9 @@ uint8_t CredStorage::verifyCred(const char* credEntered, CredType credType) {
     verifiedCredId = 0;
     if (!validateCredential(credEntered, credType)) return DOOR_UNKNOWN;
     time_t now = time(nullptr);
-    logger.logPrint(SEVERITY_DEBUG, "verifyCred: checking credential " + String(credEntered) + " at time " + String(now) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+    logger.logPrint(A_CREDENTIAL_VERIFY_STARTED, LOGAREA_OPERATION, SEVERITY_DEBUG, now);
     for (auto& p : credsCache) {
-        logger.logPrint(SEVERITY_DEBUG, "verifyCred: checking credId=" + String(p.credId) + ", name=" + String(p.name) + ", cred=" + String(p.credential()) + ", validFrom=" + String(p.validFrom) + ", validTo=" + String(p.validTo) + ", remaining=" + String(p.remaining) + "\n", BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_CREDENTIAL_VERIFY_CANDIDATE, LOGAREA_OPERATION, SEVERITY_DEBUG, p.credId, p.name, p.validFrom, p.validTo, p.remaining);
         if (p.credType != credType)
             continue;
         if (credType == CredType::Password
@@ -193,29 +193,29 @@ uint32_t CredStorage::removeCred(const CacheRecord& rec) {
     char nextKey[ID_LENGTH + 1];
 
     if (!readData(rec.credId, credRec)) {
-        Serial.printf("[CredStore] removeCred: record with credId=%u not found\n", rec.credId);
+        logger.logPrint(A_CREDSTORE_REMOVECRED_RECORD_WITH_CREDID_NOT_FOUND, LOGAREA_ACCESS, SEVERITY_ERROR, rec.credId);
         return 0;
     }
     if (!verifyLocalChain(rec.credId)) {
-        Serial.printf("[CredStore] update: credId=%u not properly chained\n", rec.credId);
+        logger.logPrint(A_CREDSTORE_UPDATE_CREDID_NOT_PROPERLY_CHAINED, LOGAREA_ACCESS, SEVERITY_ERROR, rec.credId);
         return 0;
     }
     if (!validateCredential(rec.credential(), rec.credType)
         || credRec.credType != rec.credType
         || strncmp(credRec.name, rec.name, MAX_NAME_LENGTH + 1) != 0
         || strcmp(credRec.credential(), rec.credential()) != 0) {
-        Serial.printf("[CredStore] removeCred: name or credential mismatch for credId=%u\n", rec.credId);
+        logger.logPrint(A_CREDSTORE_REMOVECRED_NAME_OR_CREDENTIAL_MISMATCH_FOR_CREDID, LOGAREA_ACCESS, SEVERITY_ERROR, rec.credId);
         return 0;
     }
     // update links of prev and next records
     CredRecord prevRec;
     CredRecord nextRec;
     if (!readData(credRec.prevId, prevRec)) {
-        Serial.printf("[CredStore] removeCred: failed to read prev record with id=%u\n", credRec.prevId);
+        logger.logPrint(A_CREDSTORE_REMOVECRED_FAILED_TO_READ_PREV_RECORD_WITH, LOGAREA_ACCESS, SEVERITY_ERROR, credRec.prevId);
         return 0;
     }
     if (!readData(credRec.nextId, nextRec)) {
-        Serial.printf("[CredStore] removeCred: failed to read next record with id=%u\n", credRec.nextId);
+        logger.logPrint(A_CREDSTORE_REMOVECRED_FAILED_TO_READ_NEXT_RECORD_WITH, LOGAREA_ACCESS, SEVERITY_ERROR, credRec.nextId);
         return 0;
     }
     prevRec.nextId = credRec.nextId;
@@ -224,7 +224,8 @@ uint32_t CredStorage::removeCred(const CacheRecord& rec) {
     writeData(prevRec);                                    // update prev record
     char recKey[ID_LENGTH + 1];
     credKey(rec.credId, recKey);
-    prefs.remove(recKey);                                   // remove the record
+    if (!prefs.remove(recKey))
+        logger.logPrint(A_NVS_OPERATION_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, "remove", rec.credId);                                   // remove the record
     credKey(nextRec.credId, nextKey);
     writeData(nextRec);                                    // update next record
 
@@ -282,13 +283,13 @@ bool CredStorage::update(const CacheRecord& cacheRec) {
     CredRecord credRec;
 
     if (!readData(cacheRec.credId, credRec)) {
-        Serial.printf("[CredStore] update: record with credId=%u not found\n", cacheRec.credId);
+        logger.logPrint(A_CREDSTORE_UPDATE_RECORD_WITH_CREDID_NOT_FOUND, LOGAREA_ACCESS, SEVERITY_ERROR, cacheRec.credId);
         return false;
     }   
     if (credRec.credType != cacheRec.credType
         || strcmp(credRec.name, cacheRec.name) != 0
         || strcmp(credRec.credential(), cacheRec.credential()) != 0) {
-        Serial.printf("[CredStore] update: name or credential mismatch for credId=%u\n", cacheRec.credId);
+        logger.logPrint(A_CREDSTORE_UPDATE_MISMATCH, LOGAREA_ACCESS, SEVERITY_ERROR, cacheRec.credId);
         return false;
     }
     credRec.validFrom = cacheRec.validFrom;
@@ -297,7 +298,7 @@ bool CredStorage::update(const CacheRecord& cacheRec) {
     credRec.doorNum = cacheRec.doorNum;                                 //### upravit až bude číslo dveří v UI
 
     if (!writeCred(credRec)) {
-        Serial.printf("[CredStore] update: write failed for credId=%u\n", credRec.credId);
+        logger.logPrint(A_CREDSTORE_UPDATE_WRITE_FAILED_FOR_CREDID, LOGAREA_ACCESS, SEVERITY_ERROR, credRec.credId);
         return false;
     }
     return true;
@@ -313,10 +314,20 @@ void CredStorage::credKey(uint32_t id, char out[ID_LENGTH + 1]) {
 bool CredStorage::readData(uint32_t id, CredRecord& rec) {
     char key[ID_LENGTH + 1];
     credKey(id, key);
-    if (prefs.getBytesLength(key) != sizeof(CredRecord)) return false;
+    if (prefs.getBytesLength(key) != sizeof(CredRecord)) {
+        if (prefs.isKey(key))
+            logger.logPrint(A_STORED_CREDENTIAL_INVALID, LOGAREA_ACCESS, SEVERITY_ERROR, id);
+        return false;
+    }
     CredRecord stored = {};
-    if (prefs.getBytes(key, &stored, sizeof(stored)) != sizeof(stored)
-        || stored.recordType != RecordType::CredentialV1) return false;
+    if (prefs.getBytes(key, &stored, sizeof(stored)) != sizeof(stored)) {
+        logger.logPrint(A_NVS_OPERATION_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, "read", id);
+        return false;
+    }
+    if (stored.recordType != RecordType::CredentialV1) {
+        logger.logPrint(A_STORED_CREDENTIAL_INVALID, LOGAREA_ACCESS, SEVERITY_ERROR, id);
+        return false;
+    }
     rec = stored;
     return true;
 }
@@ -343,16 +354,15 @@ uint32_t CredStorage::writeCred(const CredRecord &credIn)
     char recKey[ID_LENGTH + 1];
     char prevKey[ID_LENGTH + 1];
 
-    Serial.printf("[CredStore] writeCred: credId=%u, name=%s, cred=%s, doorNum=%u, validFrom=%llu, validTo=%llu, remaining=%d\n",
-                  cred.credId, cred.name, cred.credential(), cred.doorNum, cred.validFrom, cred.validTo, cred.remaining); // ###
+    logger.logPrint(A_CREDENTIAL_WRITE, LOGAREA_ACCESS, SEVERITY_DEBUG, cred.credId, cred.name, cred.doorNum, cred.validFrom, cred.validTo, cred.remaining); // ###
     if (credIn.credId == 0 || !readData(credIn.credId, storedCred)) {   // not found, create new record
         if (!readData(LAST_KEY, lastCred)) {
-            Serial.println("[CredStore] writeCred: failed to read last record");
+            logger.logPrint(A_CREDSTORE_WRITECRED_FAILED_TO_READ_LAST_RECORD, LOGAREA_ACCESS, SEVERITY_ERROR);
             return 0;
         }
         cred.credId = lastCred.nextId;
         if (!readData(lastCred.prevId, prevCred)) {
-            Serial.printf("[CredStore] writeCred: failed to read prev record with id=%u\n", lastCred.prevId);
+            logger.logPrint(A_CREDSTORE_WRITECRED_FAILED_TO_READ_PREV_RECORD_WITH, LOGAREA_ACCESS, SEVERITY_ERROR, lastCred.prevId);
             return 0;
         }
         
@@ -367,26 +377,26 @@ uint32_t CredStorage::writeCred(const CredRecord &credIn)
         lastCred.prevId = cred.credId;
         int written = writeData(lastCred) ? sizeof(lastCred) : 0;
          if (written == 0 ) {
-            Serial.printf("[CredStore] update: failed to write credId=%u\n", cred.credId);
+            logger.logPrint(A_CREDSTORE_UPDATE_FAILED_TO_WRITE_CREDID, LOGAREA_ACCESS, SEVERITY_ERROR, cred.credId);
             return 0;
         } else  {
-            Serial.printf("[CredStore] update: partial write for credId=%u, written=%d\n  (of %d)", cred.credId, written, sizeof(cred)); //###
+            logger.logPrint(A_CREDSTORE_UPDATE_PARTIAL_WRITE_FOR_CREDID_WRITTEN_OF, LOGAREA_ACCESS, SEVERITY_ERROR, cred.credId, written, sizeof(cred)); //###
             
         }
 
     } else {                                            // found, update data   
         if (!verifyLocalChain(cred.credId)) {
-            Serial.printf("[CredStore] update: credId=%u not properly chained\n", cred.credId);
+            logger.logPrint(A_CREDSTORE_UPDATE_CREDID_NOT_PROPERLY_CHAINED, LOGAREA_ACCESS, SEVERITY_ERROR, cred.credId);
             return 0;
         }
  
         credKey(cred.credId, recKey);
         int written = writeData(cred) ? sizeof(cred) : 0;
         if (written == 0 ) {
-            Serial.printf("[CredStore] update: failed to write credId=%u\n", cred.credId);
+            logger.logPrint(A_CREDSTORE_UPDATE_FAILED_TO_WRITE_CREDID, LOGAREA_ACCESS, SEVERITY_ERROR, cred.credId);
             return 0;
         } else  {
-            Serial.printf("[CredStore] update: partial write for credId=%u, written=%d\n  (of %d)", cred.credId, written, sizeof(cred)); //###
+            logger.logPrint(A_CREDSTORE_UPDATE_PARTIAL_WRITE_FOR_CREDID_WRITTEN_OF, LOGAREA_ACCESS, SEVERITY_ERROR, cred.credId, written, sizeof(cred)); //###
             
         }
     }
@@ -427,7 +437,7 @@ bool CredStorage::rebuildCache() {
 
     uint32_t cur = FIRST_KEY;
     if (!prefs.isKey(FIRST_KEY_KEY)) {
-        Serial.println("[CredStore] rebuildCache: HEAD unreadable");
+        logger.logPrint(A_CREDSTORE_REBUILDCACHE_HEAD_UNREADABLE, LOGAREA_ACCESS, SEVERITY_ERROR);
         return false;
     }
 
@@ -436,7 +446,7 @@ bool CredStorage::rebuildCache() {
         CacheRecord cacheRec;
 
         if (!readData(cur, curCred)) {
-            Serial.printf("[CredStore] rebuildCache: broken link at id=%u\n", cur);
+            logger.logPrint(A_CREDSTORE_REBUILDCACHE_BROKEN_LINK_AT_ID, LOGAREA_ACCESS, SEVERITY_ERROR, cur);
             break;
         }
 
@@ -454,18 +464,20 @@ bool CredStorage::rebuildCache() {
         cur = curCred.nextId;
     }
 
-    Serial.printf("[CredStore] Cache: %zu active record(s), maxCredId=%u\n",
-                  credsCache.size(), maxCredId);
+    logger.logPrint(A_CREDSTORE_CACHE_ACTIVE_RECORD_S_MAXCREDID, LOGAREA_ACCESS, SEVERITY_INFO, credsCache.size(), maxCredId);
     return true;
 }
 
 bool CredStorage::begin()
 {
     // Keep the existing namespace: renaming the API must not discard stored data.
-    if (!prefs.begin("pins", false)) return false;
+    if (!prefs.begin("pins", false)) {
+        logger.logPrint(A_NVS_OPERATION_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, "open", FIRST_KEY);
+        return false;
+    }
     // TEMPORARY: discard the old, smaller test-data format. Remove after rollout.
     if (prefs.isKey(FIRST_KEY_KEY) && prefs.getBytesLength(FIRST_KEY_KEY) < sizeof(CredRecord)) {
-        Serial.println("[CredStore] resetting legacy test-data pool");
+        logger.logPrint(A_CREDSTORE_RESETTING_LEGACY_TEST_DATA_POOL, LOGAREA_ACCESS, SEVERITY_ERROR);
         resetPool();
     }
     garbageCollect();
@@ -486,14 +498,21 @@ const std::vector<CacheRecord>& CredStorage::debugCache() const
 #endif
 
 bool CredStorage::writeData(const CredRecord& rec) {
-    if (rec.recordType != RecordType::CredentialV1) return false;
+    if (rec.recordType != RecordType::CredentialV1) {
+        logger.logPrint(A_STORED_CREDENTIAL_INVALID, LOGAREA_ACCESS, SEVERITY_ERROR, rec.credId);
+        return false;
+    }
     char key[ID_LENGTH + 1];
     credKey(rec.credId, key);
-    return prefs.putBytes(key, &rec, sizeof(rec)) == sizeof(rec);
+    const bool written = prefs.putBytes(key, &rec, sizeof(rec)) == sizeof(rec);
+    if (!written)
+        logger.logPrint(A_NVS_OPERATION_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, "write", rec.credId);
+    return written;
 }
 
 void CredStorage::resetPool() {
-    prefs.clear();
+    if (!prefs.clear())
+        logger.logPrint(A_NVS_OPERATION_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, "clear", FIRST_KEY);
 
     CredRecord head = {};
     head.credId = FIRST_KEY;
@@ -519,13 +538,13 @@ bool CredStorage::ensurePool() {
     bool hasTail = readData(LAST_KEY, tail);
 
     if (!hasHead && !hasTail) {
-        Serial.println("[CredStore] GC: empty credential pool, creating sentinels");
+        logger.logPrint(A_CREDSTORE_GC_EMPTY_CREDENTIAL_POOL_CREATING_SENTINELS, LOGAREA_ACCESS, SEVERITY_INFO);
         resetPool();
         return false;
     }
 
     if (!hasHead || !hasTail || head.credId != FIRST_KEY || tail.credId != LAST_KEY) {
-        Serial.println("[CredStore] GC: corrupted sentinels, resetting credential pool");
+        logger.logPrint(A_CREDSTORE_GC_CORRUPTED_SENTINELS_RESETTING_CREDENTIAL_POOL, LOGAREA_ACCESS, SEVERITY_ERROR);
         resetPool();
         return false;
     }
@@ -605,12 +624,11 @@ bool CredStorage::repairTailInsert() {
 //        if (!findLastReachableFromHead(lastReachable)) {
 //            return false;
 //        }
-        Serial.printf("[CredStore] GC: rolled back interrupted insert, tailPrev.nextId=%u\n",
-                      tailPrev.nextId);
+        logger.logPrint(A_CREDSTORE_GC_ROLLED_BACK_INTERRUPTED_INSERT_TAILPREV_NEXTID, LOGAREA_ACCESS, SEVERITY_ERROR, tailPrev.nextId);
         tailPrev.nextId = LAST_KEY;
         writeData(tailPrev);
     } else {
-        Serial.printf("[CredStore] GC: found interrupted insert, tailPrev.nextId=%u\n", tailPrev.nextId);
+        logger.logPrint(A_CREDSTORE_GC_FOUND_INTERRUPTED_INSERT_TAILPREV_NEXTID, LOGAREA_ACCESS, SEVERITY_ERROR, tailPrev.nextId);
         if ( !isStoredCredValid(newRec) || newRec.nextId != LAST_KEY || newRec.prevId != tailPrev.credId) {
             return false;
         }
@@ -624,7 +642,7 @@ bool CredStorage::repairTailInsert() {
 bool CredStorage::repairDeleteGap(const CredRecord& prevRec, CredRecord& nextRec) {
     uint32_t deletedId = nextRec.prevId;
     if (!isRealCredId(deletedId) || deletedId == prevRec.credId || deletedId == nextRec.credId) {
-        Serial.println("[CredStore] GC: tangled chain, resetting credential pool");
+        logger.logPrint(A_CREDSTORE_GC_TANGLED_CHAIN_RESETTING_CREDENTIAL_POOL, LOGAREA_ACCESS, SEVERITY_ERROR);
         return false;
     }
 
@@ -634,17 +652,16 @@ bool CredStorage::repairDeleteGap(const CredRecord& prevRec, CredRecord& nextRec
             || deleted.prevId != prevRec.credId
             || deleted.nextId != nextRec.credId
             || !isStoredCredValid(deleted)) {
-                Serial.printf("[CredStore] GC: corrupted delete record credId=%u, resetting credential pool\n", deletedId);
+                logger.logPrint(A_CREDSTORE_GC_CORRUPTED_DELETE_RECORD_CREDID_RESETTING_CREDENTIAL, LOGAREA_ACCESS, SEVERITY_ERROR, deletedId);
             return false;
         }
         char key[ID_LENGTH + 1];
         credKey(deletedId, key);
-        prefs.remove(key);
-        Serial.printf("[CredStore] GC: removed interrupted delete record credId=%u\n",
-                      deletedId);
+        if (!prefs.remove(key))
+            logger.logPrint(A_NVS_OPERATION_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, "remove", deletedId);
+        logger.logPrint(A_CREDSTORE_GC_REMOVED_INTERRUPTED_DELETE_RECORD_CREDID, LOGAREA_ACCESS, SEVERITY_ERROR, deletedId);
     } else {
-        Serial.printf("[CredStore] GC: completed interrupted delete after removed credId=%u\n",
-                      deletedId);
+        logger.logPrint(A_CREDSTORE_GC_COMPLETED_INTERRUPTED_DELETE_AFTER_REMOVED_CREDID, LOGAREA_ACCESS, SEVERITY_ERROR, deletedId);
     }
 
     nextRec.prevId = prevRec.credId;
@@ -697,7 +714,7 @@ bool CredStorage::repairCredChain() {
     } 
 
     for (uint32_t steps = 0; steps < CRED_GC_MAX_SCAN_ID; steps++) {
-        Serial.printf ( "[CredStore] GC: traversing chain, current credId=%u, nextId=%u\n", current.credId, current.nextId);
+        logger.logPrint(A_CREDSTORE_GC_TRAVERSING_CHAIN_CURRENT_CREDID_NEXTID, LOGAREA_ACCESS, SEVERITY_DEBUG, current.credId, current.nextId);
         if (current.nextId == FIRST_KEY || current.nextId == current.credId) {
             return false;
         }
@@ -705,25 +722,25 @@ bool CredStorage::repairCredChain() {
             if (current.credId == tail.prevId ) {                                    // interrupted insert in step 1, roll back it
                 current.nextId = LAST_KEY;
                 writeData(current);
-                Serial.println("[CredStore] GC: rolled back broken insert");
+                logger.logPrint(A_CREDSTORE_GC_ROLLED_BACK_BROKEN_INSERT, LOGAREA_ACCESS, SEVERITY_ERROR);
                 return true;
             } else {                                                                // severely damaged chain, cannot repair
-                Serial.println("[CredStore] GC: interrupted chain, resetting credential pool");
+                logger.logPrint(A_CREDSTORE_GC_INTERRUPTED_CHAIN_RESETTING_CREDENTIAL_POOL, LOGAREA_ACCESS, SEVERITY_ERROR);
                 return false;
             }
         }
         if( next.credId != current.nextId) {
-            Serial.println("[CredStore] GC: unexpected ID in chain, resetting credential pool");
+            logger.logPrint(A_CREDSTORE_GC_UNEXPECTED_ID_IN_CHAIN_RESETTING_CREDENTIAL, LOGAREA_ACCESS, SEVERITY_ERROR);
             return false;
         }
         if (isRealCredId(next.credId) && !isStoredCredValid(next)) {
-            Serial.println("[CredStore] GC: dubious record in chain, resetting credential pool");
+            logger.logPrint(A_CREDSTORE_GC_DUBIOUS_RECORD_IN_CHAIN_RESETTING_CREDENTIAL, LOGAREA_ACCESS, SEVERITY_ERROR);
             return false;
         }
         if (next.prevId != current.credId) {
             if (next.prevId == current.prevId) {                                    // interrupted insert in step 2, complete it
                 if (next.credId == LAST_KEY) {
-                    Serial.printf("[CredStore] GC: redoing unfinished insert, credId %u\n", current.credId);
+                    logger.logPrint(A_CREDSTORE_GC_REDOING_UNFINISHED_INSERT_CREDID, LOGAREA_ACCESS, SEVERITY_ERROR, current.credId);
                     tail.prevId = current.credId;
                     tail.nextId = current.credId + 1;
                     writeData(tail);
@@ -733,16 +750,17 @@ bool CredStorage::repairCredChain() {
             if (readData(next.prevId, deleted) && next.prevId == deleted.credId) {    // interrupted delete in step 1, complete it
                 char key[ID_LENGTH + 1];
                 credKey(deleted.credId, key);
-                prefs.remove(key);
-                Serial.printf("[CredStore] GC: removed interrupted delete record credId=%u\n", deleted.credId);
+                if (!prefs.remove(key))
+                    logger.logPrint(A_NVS_OPERATION_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, "remove", deleted.credId);
+                logger.logPrint(A_CREDSTORE_GC_REMOVED_INTERRUPTED_DELETE_RECORD_CREDID, LOGAREA_ACCESS, SEVERITY_ERROR, deleted.credId);
             }
             if (!readData(next.prevId, deleted)) {                                      // interrupted delete in step 2, complete it
                 next.prevId = current.credId;
                 writeData(next);
-                Serial.println("[CredStore] GC: completed interrupted delete");
+                logger.logPrint(A_CREDSTORE_GC_COMPLETED_INTERRUPTED_DELETE, LOGAREA_ACCESS, SEVERITY_ERROR);
                 return true;
             }
-            Serial.println("[CredStore] GC: broken chain, resetting credential pool");
+            logger.logPrint(A_CREDSTORE_GC_BROKEN_CHAIN_RESETTING_CREDENTIAL_POOL, LOGAREA_ACCESS, SEVERITY_ERROR);
             return false;
             if (!repairDeleteGap(current, next)) {
                 return false;
@@ -753,7 +771,7 @@ bool CredStorage::repairCredChain() {
         }
         current = next;
     }
-    Serial.printf("[CredStore] GC: unable to traverse chain, resetting pool, last deleted credId=%u\n", current.credId);
+    logger.logPrint(A_CREDSTORE_GC_UNABLE_TO_TRAVERSE_CHAIN_RESETTING_POOL, LOGAREA_ACCESS, SEVERITY_ERROR, current.credId);
     return false;
 } // repairCredChain
 
@@ -764,21 +782,21 @@ void CredStorage::garbageCollect()
         return;
     }
     if (!repairCredChain()) {
-        Serial.println("[CredStore] GC: unrecoverable chain state, resetting credential pool");
+        logger.logPrint(A_CREDSTORE_GC_UNRECOVERABLE_CHAIN_STATE_RESETTING_CREDENTIAL_POOL, LOGAREA_ACCESS, SEVERITY_ERROR);
         resetPool();
 
     }
 
 //    if (!repairTailInsert()) {
-//        Serial.println("[CredStore] GC: unrecoverable tail insert state, resetting credential pool");
+// Historical log site retired during the structured logging migration.
 //        resetPool();
 //        return;
 //    }
 
 //    if (!repairInterruptedDelete()) {
-//        Serial.println("[CredStore] GC: unrecoverable chain state, resetting credential pool");
+// Historical log site retired during the structured logging migration.
 //        resetPool();
 //        return;
 //    }
-    Serial.println("[CredStore] GC: completed");
+    logger.logPrint(A_CREDSTORE_GC_COMPLETED, LOGAREA_ACCESS, SEVERITY_INFO);
 }

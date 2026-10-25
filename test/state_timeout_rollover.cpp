@@ -22,9 +22,9 @@ static unsigned uiActionCount;
 static void recordUIAction(uint8_t action) { lastUIAction = action; ++uiActionCount; }
 void BoxDisplay::setOpenDoorList() {}
 void BoxDisplay::writeStatusLine() {}
-void BoxDisplay::writeInfoLine(uint8_t) {}
-void BoxDisplay::writeActionLine(uint8_t) {}
-void BoxDisplay::writeResponseLine(uint8_t) {}
+void BoxDisplay::writeInfoLine(DisplayText) {}
+void BoxDisplay::writeActionLine(DisplayText) {}
+void BoxDisplay::writeResponseLine(DisplayText) {}
 void BoxDisplay::setPasswordLength(uint8_t) {}
 void BoxDisplay::setVerifyCode(const char*) {}
 void BoxDisplay::setProgressBar(uint8_t value) { progress = value; }
@@ -33,8 +33,6 @@ uint8_t GpioHAL::openDoor(uint8_t door) { return openingSucceeds ? door : DOOR_U
 uint8_t GpioHAL::ambientOn() { ambient = true; return 1; }
 uint8_t GpioHAL::ambientOff() { ambient = false; return 0; }
 void GpioHAL::getOpenDoors(bool* doors, uint8_t count) { memset(doors, 0, count); }
-void Logger::logPrint(uint8_t, const char*, const char*, uint8_t) {}
-void Logger::logPrint(uint8_t, const String&, const char*, uint8_t) {}
 
 static void event(BoxStateMachine& machine, BoxEventType type, uint8_t door = 1)
 {
@@ -162,3 +160,6 @@ int main()
     assert(machine.getCurrentState() == BoxState::Home);
     std::cout << "State machine rollover tests passed\n";
 }
+
+bool Logger::shouldLog(uint8_t) const { return false; }
+void Logger::emit(const LogEvent&) {}

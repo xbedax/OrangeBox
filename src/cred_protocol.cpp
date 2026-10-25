@@ -1,4 +1,6 @@
 #include "cred_protocol.h"
+#include "logger.h"
+#include "result_code.h"
 #include <cstring>
 #include <cstdio>
 
@@ -26,10 +28,10 @@ bool parseType(JsonVariantConst value, CredType& type) {
     return true;
 }
 
-bool fail(JsonDocument& response, const char* reason) {
+bool fail(JsonDocument& response, const char* reason, const char* resultCode) {
     response["success"] = false;
     response["error"] = reason;
-    response[MSG_LASTRESULT] = reason;
+    response[MSG_LASTRESULT] = resultCode;
     return false;
 }
 
@@ -116,12 +118,13 @@ const char* credTypeName(CredType type) {
 bool buildCredResponse(CredStorage& storage, JsonObjectConst request, JsonDocument& response) {
     response.clear();
     CredType type;
-    if (!parseType(request["credType"], type)) return fail(response, "invalid_cred_type");
+    if (!parseType(request["credType"], type))
+        return fail(response, "invalid_cred_type", ResultCode::invalidCredType);
     response["credType"] = credTypeName(type);
     int64_t first = 0, count = 15;
     if ((!request["credId"].isNull() && !integer(request["credId"], 0, LAST_KEY - 1, first))
         || (!request["credCount"].isNull() && !integer(request["credCount"], 0, 100, count)))
-        return fail(response, "invalid_pagination");
+        return fail(response, "invalid_pagination", ResultCode::invalidPagination);
     const Fields fields = fieldsFor(type);
     JsonObject rows = response["rows"].to<JsonObject>();
     JsonArray ids = rows[fields.id].to<JsonArray>();
@@ -145,51 +148,59 @@ bool buildCredResponse(CredStorage& storage, JsonObjectConst request, JsonDocume
     return true;
 }
 
-bool applyCredChange(CredStorage& storage, JsonObjectConst request, JsonDocument& response) {
+static bool applyCredChangeImpl(CredStorage& storage, JsonObjectConst request, JsonDocument& response) {
     response.clear();
     CredType type;
-    if (!parseType(request["credType"], type)) return fail(response, "txt_invalid_cred_type");
+    if (!parseType(request["credType"], type))
+        return fail(response, "txt_invalid_cred_type", ResultCode::invalidCredType);
     response["credType"] = credTypeName(type);
     const Fields fields = fieldsFor(type);
     const char* action = request["clicked"].as<const char*>();
     if (!action || (strcmp(action, CRED_SAVE_BEACON) != 0 && strcmp(action, CRED_DELETE_BEACON) != 0))
-        return fail(response, "txt_invalid_action");
+        return fail(response, "txt_invalid_action", ResultCode::invalidAction);
     const bool deleting = strcmp(action, CRED_DELETE_BEACON) == 0;
     int64_t id;
     if (!integer(request[fields.id], 0, LAST_KEY - 1, id) || (deleting && id == 0))
-        return fail(response, "txt_invalid_cred_id");
+        return fail(response, "txt_invalid_cred_id", ResultCode::invalidCredId);
     CacheRecord cred = {};
     cred.credType = type;
     cred.credId = static_cast<uint32_t>(id);
     cred.remaining = type == CredType::PacketNumber ? 1 : -1;
-    if (id && !storage.getCred(cred.credId, cred, type)) return fail(response, "txt_cred_not_found");
-    if (!copyText(request[fields.name], cred.name, sizeof(cred.name))) return fail(response, "txt_invalid_cred_name");
+    if (id && !storage.getCred(cred.credId, cred, type))
+        return fail(response, "txt_cred_not_found", ResultCode::credNotFound);
+    if (!copyText(request[fields.name], cred.name, sizeof(cred.name)))
+        return fail(response, "txt_invalid_cred_name", ResultCode::invalidCredName);
     if (type == CredType::Password) {
-        if (!copyText(request[fields.value], cred.pin, sizeof(cred.pin))) return fail(response, "txt_invalid_cred_value");
+        if (!copyText(request[fields.value], cred.pin, sizeof(cred.pin)))
+            return fail(response, "txt_invalid_cred_value", ResultCode::invalidCredValue);
     } else {
         if (!copyText(request[fields.value], cred.packetNumber, sizeof(cred.packetNumber)))
-            return fail(response, "txt_invalid_cred_value");
+            return fail(response, "txt_invalid_cred_value", ResultCode::invalidCredValue);
     }
     if (!deleting) {
         if ((!request[fields.from].isNull() && !parseDate(request[fields.from], false, cred.validFrom))
             || (!request[fields.to].isNull() && !parseDate(request[fields.to], true, cred.validTo))
             || (cred.validFrom && cred.validTo && cred.validFrom > cred.validTo))
-            return fail(response, "invalid_date_range");
+            return fail(response, "invalid_date_range", ResultCode::invalidDateRange);
         if (!request[MSG_DOORNUM].isNull()) {
             int64_t door;
-            if (!integer(request[MSG_DOORNUM], 0, 254, door)) return fail(response, "txt_invalid_door");
+            if (!integer(request[MSG_DOORNUM], 0, 254, door))
+                return fail(response, "txt_invalid_door", ResultCode::invalidDoor);
             cred.doorNum = static_cast<uint8_t>(door);
         }
         if (type == CredType::Password) {
             JsonVariantConst unlimited = request[MSG_PINUNLIMITED];
-            if (!unlimited.isNull() && !unlimited.is<bool>()) return fail(response, "txt_invalid_unlimited");
+            if (!unlimited.isNull() && !unlimited.is<bool>())
+                return fail(response, "txt_invalid_unlimited", ResultCode::invalidUnlimited);
             if (unlimited.is<bool>() && unlimited.as<bool>()) cred.remaining = -1;
             else if (!request[MSG_REMAINING].isNull()) {
                 int64_t amount;
                 if (!integer(request[MSG_REMAINING], -1, INT32_MAX, amount)
-                    || (unlimited.is<bool>() && amount < 0)) return fail(response, "txt_invalid_amount");
+                    || (unlimited.is<bool>() && amount < 0))
+                    return fail(response, "txt_invalid_amount", ResultCode::invalidAmount);
                 cred.remaining = static_cast<int32_t>(amount);
-            } else if (unlimited.is<bool>()) return fail(response, "txt_invalid_amount");
+            } else if (unlimited.is<bool>())
+                return fail(response, "txt_invalid_amount", ResultCode::invalidAmount);
         }
     }
     bool changed;
@@ -199,10 +210,27 @@ bool applyCredChange(CredStorage& storage, JsonObjectConst request, JsonDocument
         cred.credId = storage.addCred(cred);
         changed = cred.credId != 0;
     }
-    if (!changed) return fail(response, "txt_cred_change_failed");
+    if (!changed) return fail(response, "txt_cred_change_failed", ResultCode::credChangeFailed);
     response["success"] = true;
     response["credId"] = cred.credId;
     response["action"] = deleting ? "txt_deleted" : id ? "txt_updated" : "txt_created";
-    response[MSG_LASTRESULT] = deleting ? "txt_credential_deleted" : "txt_credential_saved";
+    response[MSG_LASTRESULT] = deleting ? ResultCode::credDeleted : ResultCode::credSaved;
     return true;
+}
+
+bool applyCredChange(CredStorage& storage, JsonObjectConst request, JsonDocument& response) {
+    const bool changed = applyCredChangeImpl(storage, request, response);
+    const char* type = request["credType"].as<const char*>();
+    if (!type || (strcmp(type, "ctPin") != 0 && strcmp(type, "ctCode") != 0)) {
+        logger.logPrint(A_CREDENTIAL_INPUT_INVALID, LOGAREA_ACCESS, SEVERITY_WARNING);
+    } else {
+        const bool pin = strcmp(type, "ctPin") == 0;
+        if (changed)
+            logger.logPrint(pin ? A_PIN_EDIT : A_CODE_EDIT, LOGAREA_ACCESS, SEVERITY_CRITICAL,
+                            response["action"].as<const char*>(), response["credId"].as<uint32_t>());
+        else
+            logger.logPrint(pin ? A_PIN_EDIT_ERROR : A_CODE_EDIT_ERROR, LOGAREA_ACCESS, SEVERITY_CRITICAL,
+                            response[MSG_LASTRESULT].as<const char*>());
+    }
+    return changed;
 }

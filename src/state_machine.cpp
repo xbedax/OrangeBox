@@ -37,6 +37,7 @@ void BoxStateMachine::initialize() {
     context.passwordEntryStartedAt = 0;
     context.scanStartedAt = 0;
     context.scannedCredVerified = false;
+    context.retryScanAfterBadCode = false;
     context.badPasswordStartedAt = 0;
     context.presenceCodeStartedAt = 0;
     context.presenceCodeActive = false;
@@ -91,6 +92,7 @@ void BoxStateMachine::processEvent(const BoxEventData& event) {
 
         case BoxEventType::ScannerCodeReceived:
         case BoxEventType::ScannerFailed:
+        case BoxEventType::ScannerInvalidCode:
             handleScannerEvent(event, currentMillis);
             break;
             
@@ -121,6 +123,7 @@ void BoxStateMachine::update(unsigned long currentMillis) {
 
         case BoxState::Password:
             if (timeoutElapsed(context.passwordEntryStartedAt, context.currentPasswordEntryMillis, currentMillis)) {
+                logger.logPrint(A_PASSWORD_TIMEOUT, LOGAREA_OPERATION, SEVERITY_INFO);
                 transitionTo(BoxState::Home, currentMillis);
                 break;
             }
@@ -128,6 +131,7 @@ void BoxStateMachine::update(unsigned long currentMillis) {
 
         case BoxState::Scan:
             if (timeoutElapsed(context.scanStartedAt, QR_SCANNER_SCAN_TIMEOUT_MS, currentMillis)) {
+                logger.logPrint(A_SCAN_FAILED, LOGAREA_OPERATION, SEVERITY_INFO);
                 transitionTo(BoxState::Home, currentMillis);
             }
             break;
@@ -136,7 +140,7 @@ void BoxStateMachine::update(unsigned long currentMillis) {
             // Check if bad-password penalty expired
             if (timeoutElapsed(context.badPasswordStartedAt, context.currentBadPasswordMillis, currentMillis)) {
                 if (context.state == BoxState::BadPass) {
-                    transitionTo(BoxState::Password, currentMillis);
+                    transitionTo(context.retryScanAfterBadCode ? BoxState::Scan : BoxState::Password, currentMillis);
                 }
             }
             break;
@@ -144,6 +148,7 @@ void BoxStateMachine::update(unsigned long currentMillis) {
         case BoxState::Presence:
             // Check if presence code expired
             if (timeoutElapsed(context.presenceCodeStartedAt, PRESENCE_CODE_VALIDITY * 1000UL, currentMillis)) {
+                logger.logPrint(A_PRESENCE_TIMEOUT, LOGAREA_OPERATION, SEVERITY_INFO);
                 transitionTo(BoxState::Home, currentMillis);
             }
             break;
@@ -156,7 +161,7 @@ void BoxStateMachine::update(unsigned long currentMillis) {
 
             // Check if door opening timeout expired
             if (timeoutElapsed(context.doorOpenStartedAt, context.doorOpenDuration, currentMillis)) {
-                logger.logPrint(SEVERITY_ERROR, "Error - door " + String(context.doorToOpen) + " not opened", BOX_HOST_NAME, LOGAREA_ACCESS);
+                logger.logPrint(A_DOOR_OPEN_TIMEOUT, LOGAREA_OPERATION, SEVERITY_CRITICAL, context.doorToOpen);
                 transitionTo(BoxState::Home, currentMillis);
             }
             break;
@@ -222,7 +227,7 @@ bool BoxStateMachine::refreshPeriodicDisplay(unsigned long currentMillis) {
 
         case BoxState::BadPass:
             boxDisplay.writeActionLine(ACTIONLINE_BADPASS);
-            if (context.currentBadPasswordMillis > 0) {
+            if (context.currentBadPasswordMillis > 0 && !context.retryScanAfterBadCode) {
                 const uint32_t remaining = timeoutRemaining(context.badPasswordStartedAt, context.currentBadPasswordMillis, currentMillis);
                 uint8_t progress = (uint8_t)((remaining * 100UL) / context.currentBadPasswordMillis);
                 boxDisplay.setProgressBar(progress);
@@ -285,6 +290,7 @@ void BoxStateMachine::transitionTo(BoxState newState, unsigned long currentMilli
     }
     
     BoxState oldState = context.state;
+    logger.logPrint(A_STATE_CHANGED, LOGAREA_SYSTEM, SEVERITY_DEBUG, static_cast<int>(oldState), static_cast<int>(newState));
     context.state = newState;
     
     // Enter new state
@@ -328,12 +334,13 @@ void BoxStateMachine::transitionTo(BoxState newState, unsigned long currentMilli
 
 void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned long currentMillis) {
     
-    Serial.print("->>>>Keyboard event in state: " + String(static_cast<int>(context.state)) + ", event: " + String(static_cast<int>(event.eventType))); //>>>
+    logger.logPrint(A_KEYBOARD_EVENT, LOGAREA_SYSTEM, SEVERITY_DEBUG, static_cast<int>(context.state), static_cast<int>(event.eventType)); //>>>
     switch (context.state) {
         case BoxState::Home:
             if (event.eventType == BoxEventType::KeyboardKey1) {
                 // Switch to password mode unless a bad-password penalty timeout is still active
                 if (context.badPasswordActive && !timeoutElapsed(context.badPasswordStartedAt, context.currentBadPasswordMillis, currentMillis)) {
+                    context.retryScanAfterBadCode = false;
                     transitionTo(BoxState::BadPass, currentMillis);
                 } else {
                     transitionTo(BoxState::Password, currentMillis);
@@ -342,23 +349,32 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
                 // Switch to presence mode
                 transitionTo(BoxState::Presence, currentMillis);
             } else if (event.eventType == BoxEventType::KeyboardKey3) {
-                transitionTo(BoxState::Scan, currentMillis);
+                if (context.badPasswordActive && !timeoutElapsed(context.badPasswordStartedAt, context.currentBadPasswordMillis, currentMillis)) {
+                    context.retryScanAfterBadCode = true;
+                    transitionTo(BoxState::BadPass, currentMillis);
+                } else {
+                    transitionTo(BoxState::Scan, currentMillis);
+                }
             }
             break;
             
         case BoxState::Password:
             if (event.eventType == BoxEventType::KeyboardEnter) {
+                logger.logPrint(A_PASSWORD_ENTERED, LOGAREA_OPERATION, SEVERITY_CRITICAL);
                 // Validate password
                 context.doorToOpen = credStorage.verifyCred(event.data.keyboardData.password);
                 if (context.doorToOpen != DOOR_UNKNOWN) {
+                    logger.logPrint(A_PASSWORD_VERIFIED, LOGAREA_OPERATION, SEVERITY_CRITICAL, context.doorToOpen);
                     // Valid PIN - transition to opening
                     context.credVerified = true;
                     context.scannedCredVerified = false;
                     context.badPasswordCount = 0;
                     transitionTo(BoxState::Opening, currentMillis);
                 } else {
+                    logger.logPrint(A_PASSWORD_BAD, LOGAREA_OPERATION, SEVERITY_CRITICAL);
                     // Invalid PIN - transition to bad password state
-                    context.badPasswordCount++;
+                    context.retryScanAfterBadCode = false;
+                    if (context.badPasswordCount < UINT8_MAX) ++context.badPasswordCount;
                     transitionTo(BoxState::BadPass, currentMillis);
                 }
                 break;
@@ -369,6 +385,10 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
         case BoxState::Presence:
         case BoxState::Scan:
             if (event.eventType == BoxEventType::KeyboardCancel) {
+                if (context.state == BoxState::Presence)
+                    logger.logPrint(A_PRESENCE_CANCELED, LOGAREA_OPERATION, SEVERITY_CRITICAL);
+                else if (context.state == BoxState::Password || (context.state == BoxState::BadPass && !context.retryScanAfterBadCode))
+                    logger.logPrint(A_PASSWORD_CANCELED, LOGAREA_OPERATION, SEVERITY_CRITICAL);
                 // Return to home
                 transitionTo(BoxState::Home, currentMillis);
             }
@@ -382,18 +402,29 @@ void BoxStateMachine::handleKeyboardEvent(const BoxEventData& event, unsigned lo
 
 void BoxStateMachine::handleScannerEvent(const BoxEventData& event, unsigned long currentMillis) {
     if (context.state != BoxState::Scan) return;
-    if (event.eventType == BoxEventType::ScannerFailed
-        || timeoutElapsed(context.scanStartedAt, QR_SCANNER_SCAN_TIMEOUT_MS, currentMillis)) {
+    if (timeoutElapsed(context.scanStartedAt, QR_SCANNER_SCAN_TIMEOUT_MS, currentMillis)
+        || event.eventType == BoxEventType::ScannerFailed) {
+        logger.logPrint(A_SCAN_FAILED, LOGAREA_OPERATION, SEVERITY_INFO);
         transitionTo(BoxState::Home, currentMillis);
         return;
     }
-    context.doorToOpen = credStorage.verifyCred(event.data.scannerData.cred, CredType::PacketNumber);
+    logger.logPrint(A_CODE_SCANNED, LOGAREA_OPERATION, SEVERITY_CRITICAL);
+    if (event.eventType == BoxEventType::ScannerInvalidCode) {
+        context.doorToOpen = DOOR_UNKNOWN;
+    } else {
+        context.doorToOpen = credStorage.verifyCred(event.data.scannerData.cred, CredType::PacketNumber);
+    }
     if (context.doorToOpen == DOOR_UNKNOWN) {
-        transitionTo(BoxState::Home, currentMillis);
+        logger.logPrint(A_CODE_UNKNOWN, LOGAREA_OPERATION, SEVERITY_CRITICAL);
+        context.retryScanAfterBadCode = true;
+        if (context.badPasswordCount < UINT8_MAX) ++context.badPasswordCount;
+        transitionTo(BoxState::BadPass, currentMillis);
         return;
     }
+    logger.logPrint(A_CODE_VERIFIED, LOGAREA_OPERATION, SEVERITY_CRITICAL, context.doorToOpen);
     context.credVerified = true;
     context.scannedCredVerified = true;
+    context.badPasswordCount = 0;
     transitionTo(BoxState::Opening, currentMillis);
 }
 
@@ -408,8 +439,14 @@ void BoxStateMachine::handleWebEvent(const BoxEventData& event, unsigned long cu
 }
 
 void BoxStateMachine::handleSensorEvent(const BoxEventData& event, unsigned long currentMillis) {
+    if (event.eventType == BoxEventType::DoorClosed)
+        logger.logPrint(A_DOOR_CLOSED, LOGAREA_OPERATION, SEVERITY_CRITICAL, event.data.doorData.doorNum);
+    else if (event.eventType == BoxEventType::DoorOpened
+             && (event.data.doorData.doorNum != context.doorToOpen
+                 || (context.state != BoxState::Opening && context.state != BoxState::Open)))
+        logger.logPrint(A_DOOR_OPENED, LOGAREA_OPERATION, SEVERITY_CRITICAL, event.data.doorData.doorNum);
     boxDisplay.setOpenDoorList();
-    Serial.print("->>>>Sensor event in state: " + String(static_cast<int>(context.state)) + ", event: " + String(static_cast<int>(event.eventType)) + ", door: " + String(event.data.doorData.doorNum)); //>>>.
+    logger.logPrint(A_SENSOR_EVENT, LOGAREA_SYSTEM, SEVERITY_DEBUG, static_cast<int>(context.state), static_cast<int>(event.eventType), event.data.doorData.doorNum); //>>>.
 
     switch (context.state) {
         case BoxState::Opening:
@@ -434,19 +471,25 @@ void BoxStateMachine::handleSensorEvent(const BoxEventData& event, unsigned long
 }
 
 void BoxStateMachine::handleTimerEvent(const BoxEventData& event, unsigned long currentMillis) {
+    logger.logPrint(A_TIMER_EVENT, LOGAREA_SYSTEM, SEVERITY_INFO, static_cast<int>(event.eventType));
     switch (event.eventType) {
         case BoxEventType::PasswordTimeout:
             if (context.state == BoxState::Password) {
+                logger.logPrint(A_PASSWORD_TIMEOUT, LOGAREA_OPERATION, SEVERITY_INFO);
                 transitionTo(BoxState::Home, currentMillis);
             }
             break;
 
         case BoxEventType::ScanTimeout:
-            if (context.state == BoxState::Scan) transitionTo(BoxState::Home, currentMillis);
+            if (context.state == BoxState::Scan) {
+                logger.logPrint(A_SCAN_FAILED, LOGAREA_OPERATION, SEVERITY_INFO);
+                transitionTo(BoxState::Home, currentMillis);
+            }
             break;
             
         case BoxEventType::PresenceTimeout:
             if (context.state == BoxState::Presence) {
+                logger.logPrint(A_PRESENCE_TIMEOUT, LOGAREA_OPERATION, SEVERITY_INFO);
                 transitionTo(BoxState::Home, currentMillis);
             }
             break;
@@ -488,7 +531,9 @@ void BoxStateMachine::onExitHome() {
 }
 
 void BoxStateMachine::onEnterPassword(unsigned long currentMillis) {
+    logger.logPrint(A_PASSWORD_STARTED, LOGAREA_OPERATION, SEVERITY_CRITICAL);
     disableExternal();
+    context.retryScanAfterBadCode = false;
     boxDisplay.writeInfoLine(INFOLINE_PASS);            // INFOLINE_PASS
     boxDisplay.setPasswordLength(0);
     context.badPasswordStartedAt = 0;
@@ -506,11 +551,14 @@ void BoxStateMachine::onExitPassword() {
 }
 
 void BoxStateMachine::onEnterScan(unsigned long currentMillis) {
+    logger.logPrint(A_SCAN_STARTED, LOGAREA_OPERATION, SEVERITY_INFO);
     static_assert(QR_SCANNER_SCAN_TIMEOUT_MS > 0, "Scanning must have a finite timeout");
     disableExternal();
     context.scanStartedAt = currentMillis;
     context.credVerified = false;
     context.scannedCredVerified = false;
+    context.badPasswordActive = false;
+    context.currentBadPasswordMillis = 0;
     boxDisplay.writeInfoLine(INFOLINE_CANCEL);
     boxDisplay.writeActionLine(ACTIONLINE_SCAN);
     boxDisplay.setProgressBar(100);
@@ -521,6 +569,7 @@ void BoxStateMachine::onExitScan() {
 }
 
 void BoxStateMachine::onEnterPresence(unsigned long currentMillis) {
+    logger.logPrint(A_PRESENCE_STARTED, LOGAREA_OPERATION, SEVERITY_CRITICAL);
     generatePresenceCode();
     context.presenceCodeStartedAt = currentMillis;
     context.presenceCodeActive = true;
@@ -541,7 +590,7 @@ void BoxStateMachine::onEnterOpening(unsigned long currentMillis) {
         context.doorOpenDuration = DOOR_OPENING_TIMEOUT;
         gpioHal.ambientOn();
     } else {
-        logger.logPrint(SEVERITY_ERROR, "Error - door " + String(context.doorToOpen) + " cannot be opened", BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_DOOR_OPEN_FAILED, LOGAREA_OPERATION, SEVERITY_CRITICAL, context.doorToOpen);
         context.doorOpenStartedAt = currentMillis;
         context.doorOpenDuration = 0;
     }
@@ -552,12 +601,13 @@ void BoxStateMachine::onExitOpening() {
 }
 
 void BoxStateMachine::onEnterOpen(unsigned long currentMillis) {
+    logger.logPrint(A_DOOR_OPENED, LOGAREA_OPERATION, SEVERITY_CRITICAL, context.doorToOpen);
     bool consumeCred = context.credVerified;
 #ifdef QR_SCANNER_TEST_KEEP_CRED
     if (context.scannedCredVerified) consumeCred = false;
 #endif
     if (consumeCred && !credStorage.usedCred(context.doorToOpen)) {
-        logger.logPrint(SEVERITY_ERROR, "Error - verified credential for door " + String(context.doorToOpen) + " could not be consumed", BOX_HOST_NAME, LOGAREA_ACCESS);
+        logger.logPrint(A_CREDENTIAL_CONSUME_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, context.doorToOpen);
     }
     context.credVerified = false;
     context.scannedCredVerified = false;
@@ -597,7 +647,7 @@ void BoxStateMachine::onExitExternal() {
 }
 
 void BoxStateMachine::onEnterBadPass(unsigned long currentMillis) {
-    boxDisplay.writeResponseLine(RESPONSELINE_BADPASS);
+    boxDisplay.writeResponseLine(context.retryScanAfterBadCode ? RESPONSELINE_BADSCAN : RESPONSELINE_BADPASS);
 
     if (!context.badPasswordActive || timeoutElapsed(context.badPasswordStartedAt, context.currentBadPasswordMillis, currentMillis)) {
         unsigned long delayMs;
@@ -654,9 +704,8 @@ bool BoxStateMachine::areAllDoorsClosed() const {
     return true;
 }
 
-//
+// Enables external commands, e.g., allowing the UI to control door actions.
 void BoxStateMachine::enableExternal() {
-    // Reserved for future websocket UI synchronization.
     if(onUIUpdate && lastUIAction != UI_ENABLE_DOOR_CONTROLS) {
         lastUIAction = UI_ENABLE_DOOR_CONTROLS;
         onUIUpdate(UI_ENABLE_DOOR_CONTROLS);
@@ -669,4 +718,9 @@ void BoxStateMachine::disableExternal() {
         lastUIAction = UI_DISABLE_DOOR_CONTROLS;
         onUIUpdate(UI_DISABLE_DOOR_CONTROLS);
     }
+}
+
+// Check if external commands are currently enabled.
+bool BoxStateMachine::isExternalEnabled() const {
+    return (lastUIAction == UI_ENABLE_DOOR_CONTROLS);
 }

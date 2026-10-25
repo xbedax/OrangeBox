@@ -56,7 +56,7 @@ my $ambientonoverhang = 3;							#how long is ambient on after closing doors
 my $lastaction = "";								#last action result
 my $lastpin = 0;										#first available pinId
 my $lastcode = 0;
-my $last_command_status = 'wat';
+my $last_command_status = 'R28';
 my $door_state_closed = 'yes';						#smazat
 my $door_state_open = 'no';							#smazat
 my $ambient_state_off = 'yes';						#smazat
@@ -370,7 +370,7 @@ sub set_code {
 		foreach($ws->connections()){
 			$_->send_utf8($codetable);
 		}
-		$last_command_status = "Code $codeid / $$rmsg{'data'}{'codename'} deleted.";
+		$last_command_status = 'R44';
 		
 		my $mstatemessage = $json->encode( $statemessage_src->() );
 		print"Sending: $mstatemessage\n";
@@ -402,7 +402,7 @@ sub set_code {
 		foreach($ws->connections()){
 			$_->send_utf8($codetable);
 		}
-		$last_command_status = "Code $codeid / $$rmsg{'data'}{'codename'} saved.";
+		$last_command_status = 'R43';
 		print Dumper $statemessage_src;
 		my $mstatemessage = $json->encode( $statemessage_src->() );
 		print"Sending: $mstatemessage\n";
@@ -430,7 +430,7 @@ sub set_pin {
 		foreach($ws->connections()){
 			$_->send_utf8($pintable);
 		}
-		$last_command_status = "PIN $pinid / $$rmsg{'data'}{'pinname'} deleted.";
+		$last_command_status = 'R44';
 		
 		my $mstatemessage = $json->encode( $statemessage_src->() );
 		print"Sending: $mstatemessage\n";
@@ -463,7 +463,7 @@ sub set_pin {
 		foreach($ws->connections()){
 			$_->send_utf8($pintable);
 		}
-		$last_command_status = "PIN $pinid / $$rmsg{'data'}{'pinname'} saved.";
+		$last_command_status = 'R43';
 		print Dumper $statemessage_src;
 		my $mstatemessage = $json->encode( $statemessage_src->() );
 		print"Sending: $mstatemessage\n";

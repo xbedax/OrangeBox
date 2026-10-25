@@ -20,7 +20,6 @@
 #include "logger.h"
 
 Logger logger;
-void Logger::logPrint(uint8_t, const String&, const char*, uint8_t) {}
 
 CredStorage credStorage;
 
@@ -426,3 +425,6 @@ int main(int argc, char** argv)
 
     return 0;
 }
+
+bool Logger::shouldLog(uint8_t) const { return false; }
+void Logger::emit(const LogEvent&) {}

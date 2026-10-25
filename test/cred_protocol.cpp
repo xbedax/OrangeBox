@@ -4,9 +4,10 @@
 #include "cred_protocol.h"
 #include "gpio_hal.h"
 #include "logger.h"
+#include "result_code.h"
 
 Logger logger;
-void Logger::logPrint(uint8_t, const String&, const char*, uint8_t) {}
+static bool loggedPinEdit, loggedCodeEdit, loggedPinError, loggedCodeError;
 
 // PinRecord layout before the API rename: existing CredentialV1 blobs must survive.
 struct PreviousRecord {
@@ -42,12 +43,15 @@ static JsonDocument query(CredStorage& storage, const char* type, uint32_t first
     return response;
 }
 
-static void reject(CredStorage& storage, const JsonDocument& request) {
+static void reject(CredStorage& storage, const JsonDocument& request, const char* expectedResultCode = nullptr) {
     const auto before = Preferences::dumpNamespace("pins");
     JsonDocument response;
     assert(!applyCredChange(storage, request.as<JsonObjectConst>(), response));
     assert(response["success"] == false);
     assert(response["error"].is<const char*>());
+    const char* resultCode = response[MSG_LASTRESULT];
+    assert(resultCode && resultCode[0] == 'R' && resultCode[1] >= '0' && resultCode[1] <= '9');
+    if (expectedResultCode) assert(strcmp(resultCode, expectedResultCode) == 0);
     assert(before == Preferences::dumpNamespace("pins"));
 }
 
@@ -64,7 +68,8 @@ int main() {
     auto password = parse(R"({"credType":"ctPin","pinid":"0","pinname":"Kule","pinvalue":"49786543","amount":"3","checkbox-unlimited":false,"datefrom":"2000-02-10","dateto":"2099-04-01","clicked":"savebutton","doornum":"4"})");
     assert(applyCredChange(storage, password.as<JsonObjectConst>(), result));
     uint32_t passwordId = result["credId"];
-    assert(result["action"] == "created");
+    assert(result[MSG_LASTRESULT] == ResultCode::credSaved);
+    assert(result["action"] == "txt_created");
     password["pinid"] = passwordId;
     auto rows = query(storage, "ctPin");
     assert(rows["rowCount"] == 1);
@@ -147,7 +152,7 @@ int main() {
     auto bad = password;
     bad["datefrom"] = "2099-02-02";
     bad["dateto"] = "2099-02-01";
-    reject(restarted, bad);
+    reject(restarted, bad, ResultCode::invalidDateRange);
     bad = password; bad.remove("clicked"); reject(restarted, bad);
     bad = password; bad["clicked"] = 1; reject(restarted, bad);
     bad = password; bad["credType"] = "all"; reject(restarted, bad);
@@ -173,19 +178,37 @@ int main() {
     auto request = parse(R"({"credId":0,"credCount":15,"credType":"ctPin"})");
     request["credCount"] = -1;
     assert(!buildCredResponse(restarted, request.as<JsonObjectConst>(), result));
+    assert(result[MSG_LASTRESULT] == ResultCode::invalidPagination);
     request["credCount"] = 101;
     assert(!buildCredResponse(restarted, request.as<JsonObjectConst>(), result));
+    assert(result[MSG_LASTRESULT] == ResultCode::invalidPagination);
     request["credCount"] = 1;
     request["credType"] = "unknown";
     assert(!buildCredResponse(restarted, request.as<JsonObjectConst>(), result));
+    assert(result[MSG_LASTRESULT] == ResultCode::invalidCredType);
 
     // Explicit deletion checks full identity and type, including packet text.
     packet["clicked"] = "deletebutton";
     assert(applyCredChange(restarted, packet.as<JsonObjectConst>(), result));
+    assert(result[MSG_LASTRESULT] == ResultCode::credDeleted);
     assert(query(restarted, "ctCode")["rowCount"] == 0);
     reject(restarted, packet); // Already deleted.
     password["clicked"] = "deletebutton";
     assert(applyCredChange(restarted, password.as<JsonObjectConst>(), result));
     assert(query(restarted, "ctPin")["rowCount"] == 0);
+    assert(loggedPinEdit && loggedCodeEdit && loggedPinError && loggedCodeError);
     std::cout << "PASS: credential protocol CRUD, dates, paging, validation and NVS layout\n";
+}
+
+bool Logger::shouldLog(uint8_t) const { return true; }
+void Logger::emit(const LogEvent& event) {
+    const auto id = event.record.message;
+    if (id == A_PIN_EDIT) loggedPinEdit = true;
+    if (id == A_CODE_EDIT) loggedCodeEdit = true;
+    if (id == A_PIN_EDIT_ERROR) loggedPinError = true;
+    if (id == A_CODE_EDIT_ERROR) loggedCodeError = true;
+    if (id >= A_PIN_EDIT && id <= A_CODE_EDIT_ERROR) {
+        assert(event.record.severity == SEVERITY_CRITICAL);
+        assert(event.record.logArea == LOGAREA_ACCESS);
+    }
 }

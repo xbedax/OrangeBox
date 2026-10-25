@@ -3,7 +3,7 @@ from pathlib import Path
 import re
 
 root = Path(__file__).resolve().parent.parent
-html = (root / "UI/index.html").read_text(encoding="utf-8")
+html = (root / "UI/index_n.html").read_text(encoding="utf-8")
 
 def inline_script(match):
     path = match.group(1)

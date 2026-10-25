@@ -13,6 +13,7 @@ Communicates via keyboardStates struct:
 */
 
 #include <cstring>
+#include "logger.h"
 #include <Wire.h>
 #include "config.h"
 #include "box_display.h"
@@ -63,10 +64,10 @@ bool BoxKeyboard::pollKeypad(keyboardStatus *keyboardState) {
   uint8_t len = Wire.read();
   for (uint8_t i = 0; i < len && Wire.available(); i++) {
     uint8_t k = Wire.read();
-//    Serial.print("PassLen: ");
-//    Serial.print(pass_len);
-//    Serial.print(" - ");
-//    Serial.println(k);
+// Historical log site retired during the structured logging migration.
+// Historical log site retired during the structured logging migration.
+// Historical log site retired during the structured logging migration.
+// Historical log site retired during the structured logging migration.
     if (keyboardMode == KEYBOARD_MODE_COMMAND) {
         keyboardState->currentKey = k;
       // Handle command input if needed
@@ -77,27 +78,8 @@ bool BoxKeyboard::pollKeypad(keyboardStatus *keyboardState) {
   return true;
 }  // pollKeypad
 
-/*  temer jiste smazat
-// Password processing
-bool BoxKeyboard::processPassword(keyboardStatus *keyboardState) {
-  if (!keyboardState->passwordComplete)
-    return;
+// Retired password-processing implementation; handled by the state machine.
 
-  Serial.print("Heslo: ");
-  for (uint8_t i = 0; i < keyboardState->currentPasswordLen; i++)
-    Serial.print(keyboardState->currentPassword[i]);
-  Serial.println();
-
-    char passStr[15];         // Max IP string length is 15 chars + null terminator
-    strcpy ( passStr, "Heslo:" );
-    for (uint8_t i = 0; i < keyboardState->currentPasswordLen; i++){
-      char passNum[4];
-      sprintf(passNum, "%d", keyboardState->currentPassword[i]); 
-      strcat ( passStr, passNum );
-    }
-//    boxDisplay->logPrint( passStr );
-  } // processPassword
-*/    
 
 bool BoxKeyboard::pollKeyboard(keyboardStatus *keyboardState) {
     switch (keyboardState->keyboardMode ) {
@@ -114,7 +96,7 @@ bool BoxKeyboard::pollKeyboard(keyboardStatus *keyboardState) {
             }
             return (pollKeypad(keyboardState));
         default:
-            Serial.print("Invalid keyboard mode:" + keyboardState->keyboardMode);
+            logger.logPrint(A_INVALID_KEYBOARD_MODE, LOGAREA_SYSTEM, SEVERITY_ERROR, keyboardState->keyboardMode);
             return false;
 
     }

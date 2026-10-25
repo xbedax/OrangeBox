@@ -1,0 +1,752 @@
+[
+  {
+    "id": 1,
+    "text": "Invalid actionType idx presented",
+    "shortText": null
+  },
+  {
+    "id": 3,
+    "text": "Invalid infoType idx presented",
+    "shortText": null
+  },
+  {
+    "id": 4,
+    "text": "Invalid responseType idx presented",
+    "shortText": null
+  },
+  {
+    "id": 5,
+    "text": "Initializing LCD display...",
+    "shortText": null
+  },
+  {
+    "id": 19,
+    "text": "Diagnostics t={p1} ih=[{p2},{p3},{p4}] ps=[{p5},{p6},{p7}] stk={p8} fl=[{p9},{p10},{p11}]",
+    "shortText": "Diagnostics snapshot"
+  },
+  {
+    "id": 20,
+    "text": "Reading state for logical door number: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 21,
+    "text": "Invalid door number in lockDeactivate: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 22,
+    "text": "GPIO HAL loaded {p1} active doors:",
+    "shortText": null
+  },
+  {
+    "id": 23,
+    "text": "Door {p1} (LogDoorNum: {p2}) - State Pin: {p3}, Last State: {p4}",
+    "shortText": null
+  },
+  {
+    "id": 32,
+    "text": "Invalid keyboard mode:{p1}",
+    "shortText": null
+  },
+  {
+    "id": 44,
+    "text": "Missing door number in request",
+    "shortText": null
+  },
+  {
+    "id": 46,
+    "text": "Invalid door number: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 47,
+    "text": "Invalid door format",
+    "shortText": null
+  },
+  {
+    "id": 48,
+    "text": "Invalid door number {p1}",
+    "shortText": null
+  },
+  {
+    "id": 49,
+    "text": "handleGetDoors called for door number: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 50,
+    "text": "Mixed state detected for door {p1}",
+    "shortText": null
+  },
+  {
+    "id": 53,
+    "text": "Presence code required but not provided",
+    "shortText": null
+  },
+  {
+    "id": 54,
+    "text": "Invalid presence code",
+    "shortText": null
+  },
+  {
+    "id": 55,
+    "text": "Door {p1} open request queued",
+    "shortText": null
+  },
+  {
+    "id": 56,
+    "text": "VPN begin failed: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 57,
+    "text": "VPN configured: 127.0.0.1:{p1} -> {p2}:80",
+    "shortText": null
+  },
+  {
+    "id": 58,
+    "text": "VPN connection scheduled",
+    "shortText": null
+  },
+  {
+    "id": 59,
+    "text": "Firmware restart",
+    "shortText": "Restart"
+  },
+  {
+    "id": 60,
+    "text": "RTC OSF flag: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 62,
+    "text": "System time loaded from RTC with OSF set; waiting for NTP correction",
+    "shortText": null
+  },
+  {
+    "id": 63,
+    "text": "System time loaded from RTC",
+    "shortText": null
+  },
+  {
+    "id": 64,
+    "text": "RTC available, but time is not trusted yet",
+    "shortText": null
+  },
+  {
+    "id": 65,
+    "text": "RTC not found at 0x{p1}",
+    "shortText": null
+  },
+  {
+    "id": 66,
+    "text": "Box current time epoch: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 68,
+    "text": "Box current time: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 70,
+    "text": "Display initialized",
+    "shortText": null
+  },
+  {
+    "id": 71,
+    "text": "BOX prototype",
+    "shortText": null
+  },
+  {
+    "id": 72,
+    "text": "HAL initialized",
+    "shortText": null
+  },
+  {
+    "id": 73,
+    "text": "Keyboard initialized",
+    "shortText": null
+  },
+  {
+    "id": 74,
+    "text": "Scanner command configuration is invalid",
+    "shortText": null
+  },
+  {
+    "id": 75,
+    "text": "State machine initialized",
+    "shortText": null
+  },
+  {
+    "id": 78,
+    "text": "Starting WiFi",
+    "shortText": null
+  },
+  {
+    "id": 79,
+    "text": "Waiting for WiFi",
+    "shortText": null
+  },
+  {
+    "id": 80,
+    "text": "WiFi connected!",
+    "shortText": null
+  },
+  {
+    "id": 81,
+    "text": "WiFi address: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 83,
+    "text": "Open this URL: http://{p1}",
+    "shortText": null
+  },
+  {
+    "id": 85,
+    "text": "WiFi FAILED!",
+    "shortText": null
+  },
+  {
+    "id": 86,
+    "text": "NTP synchronization scheduled",
+    "shortText": null
+  },
+  {
+    "id": 87,
+    "text": "NTP synchronization not configured",
+    "shortText": null
+  },
+  {
+    "id": 88,
+    "text": "Credential storage init",
+    "shortText": null
+  },
+  {
+    "id": 92,
+    "text": "WebSocket Initialized",
+    "shortText": null
+  },
+  {
+    "id": 93,
+    "text": "Webserver started!",
+    "shortText": null
+  },
+  {
+    "id": 94,
+    "text": "SETUP COMPLETE!",
+    "shortText": null
+  },
+  {
+    "id": 95,
+    "text": "Mixed state detected for door {p1} during notification",
+    "shortText": null
+  },
+  {
+    "id": 96,
+    "text": "Invalid door number {p1} in notification",
+    "shortText": null
+  },
+  {
+    "id": 97,
+    "text": "Lock timer payload: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 98,
+    "text": "Lock {p1} deactivated",
+    "shortText": null
+  },
+  {
+    "id": 99,
+    "text": "Invalid lock number in timer callback: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 100,
+    "text": "Deactivating ambient light",
+    "shortText": null
+  },
+  {
+    "id": 101,
+    "text": "Password timeout passed",
+    "shortText": null
+  },
+  {
+    "id": 102,
+    "text": "Unknown due action called",
+    "shortText": null
+  },
+  {
+    "id": 103,
+    "text": "WiFi lost",
+    "shortText": null
+  },
+  {
+    "id": 104,
+    "text": "Restarting WiFi association",
+    "shortText": null
+  },
+  {
+    "id": 105,
+    "text": "WiFi restored",
+    "shortText": null
+  },
+  {
+    "id": 106,
+    "text": "[CredStore] updateCred: invalid credential",
+    "shortText": null
+  },
+  {
+    "id": 107,
+    "text": "[CredStore] addCred: invalid credential",
+    "shortText": null
+  },
+  {
+    "id": 108,
+    "text": "[CredStore] addCred: failed to write new credential",
+    "shortText": null
+  },
+  {
+    "id": 109,
+    "text": "Credential verification at {p1}",
+    "shortText": null
+  },
+  {
+    "id": 110,
+    "text": "Checking credential id={p1}, name={p2}, validFrom={p3}, validTo={p4}, remaining={p5}",
+    "shortText": null
+  },
+  {
+    "id": 111,
+    "text": "[CredStore] removeCred: record with credId={p1} not found",
+    "shortText": null
+  },
+  {
+    "id": 112,
+    "text": "[CredStore] update: credId={p1} not properly chained",
+    "shortText": null
+  },
+  {
+    "id": 113,
+    "text": "[CredStore] removeCred: name or credential mismatch for credId={p1}",
+    "shortText": null
+  },
+  {
+    "id": 114,
+    "text": "[CredStore] removeCred: failed to read prev record with id={p1}",
+    "shortText": null
+  },
+  {
+    "id": 115,
+    "text": "[CredStore] removeCred: failed to read next record with id={p1}",
+    "shortText": null
+  },
+  {
+    "id": 116,
+    "text": "[CredStore] update: record with credId={p1} not found",
+    "shortText": null
+  },
+  {
+    "id": 117,
+    "text": "Credential name or value mismatch for id={p1}",
+    "shortText": null
+  },
+  {
+    "id": 118,
+    "text": "[CredStore] update: write failed for credId={p1}",
+    "shortText": null
+  },
+  {
+    "id": 119,
+    "text": "Writing credential id={p1}, name={p2}, door={p3}, validFrom={p4}, validTo={p5}, remaining={p6}",
+    "shortText": null
+  },
+  {
+    "id": 120,
+    "text": "[CredStore] writeCred: failed to read last record",
+    "shortText": null
+  },
+  {
+    "id": 121,
+    "text": "[CredStore] writeCred: failed to read prev record with id={p1}",
+    "shortText": null
+  },
+  {
+    "id": 122,
+    "text": "[CredStore] update: failed to write credId={p1}",
+    "shortText": null
+  },
+  {
+    "id": 123,
+    "text": "[CredStore] update: partial write for credId={p1}, written={p2}   (of {p3})",
+    "shortText": null
+  },
+  {
+    "id": 127,
+    "text": "[CredStore] rebuildCache: HEAD unreadable",
+    "shortText": null
+  },
+  {
+    "id": 128,
+    "text": "[CredStore] rebuildCache: broken link at id={p1}",
+    "shortText": null
+  },
+  {
+    "id": 129,
+    "text": "[CredStore] Cache: {p1} active record(s), maxCredId={p2}",
+    "shortText": null
+  },
+  {
+    "id": 130,
+    "text": "[CredStore] resetting legacy test-data pool",
+    "shortText": null
+  },
+  {
+    "id": 131,
+    "text": "[CredStore] GC: empty credential pool, creating sentinels",
+    "shortText": null
+  },
+  {
+    "id": 132,
+    "text": "[CredStore] GC: corrupted sentinels, resetting credential pool",
+    "shortText": null
+  },
+  {
+    "id": 133,
+    "text": "[CredStore] GC: rolled back interrupted insert, tailPrev.nextId={p1}",
+    "shortText": null
+  },
+  {
+    "id": 134,
+    "text": "[CredStore] GC: found interrupted insert, tailPrev.nextId={p1}",
+    "shortText": null
+  },
+  {
+    "id": 135,
+    "text": "[CredStore] GC: tangled chain, resetting credential pool",
+    "shortText": null
+  },
+  {
+    "id": 136,
+    "text": "[CredStore] GC: corrupted delete record credId={p1}, resetting credential pool",
+    "shortText": null
+  },
+  {
+    "id": 137,
+    "text": "[CredStore] GC: removed interrupted delete record credId={p1}",
+    "shortText": null
+  },
+  {
+    "id": 138,
+    "text": "[CredStore] GC: completed interrupted delete after removed credId={p1}",
+    "shortText": null
+  },
+  {
+    "id": 139,
+    "text": "[CredStore] GC: traversing chain, current credId={p1}, nextId={p2}",
+    "shortText": null
+  },
+  {
+    "id": 140,
+    "text": "[CredStore] GC: rolled back broken insert",
+    "shortText": null
+  },
+  {
+    "id": 141,
+    "text": "[CredStore] GC: interrupted chain, resetting credential pool",
+    "shortText": null
+  },
+  {
+    "id": 142,
+    "text": "[CredStore] GC: unexpected ID in chain, resetting credential pool",
+    "shortText": null
+  },
+  {
+    "id": 143,
+    "text": "[CredStore] GC: dubious record in chain, resetting credential pool",
+    "shortText": null
+  },
+  {
+    "id": 144,
+    "text": "[CredStore] GC: redoing unfinished insert, credId {p1}",
+    "shortText": null
+  },
+  {
+    "id": 146,
+    "text": "[CredStore] GC: completed interrupted delete",
+    "shortText": null
+  },
+  {
+    "id": 147,
+    "text": "[CredStore] GC: broken chain, resetting credential pool",
+    "shortText": null
+  },
+  {
+    "id": 148,
+    "text": "[CredStore] GC: unable to traverse chain, resetting pool, last deleted credId={p1}",
+    "shortText": null
+  },
+  {
+    "id": 149,
+    "text": "[CredStore] GC: unrecoverable chain state, resetting credential pool",
+    "shortText": null
+  },
+  {
+    "id": 152,
+    "text": "[CredStore] GC: completed",
+    "shortText": null
+  },
+  {
+    "id": 153,
+    "text": "door {p1} not opened",
+    "shortText": "Door {p1} timeout"
+  },
+  {
+    "id": 154,
+    "text": ">>>>Keyboard event in state: {p1}, event: {p2}",
+    "shortText": null
+  },
+  {
+    "id": 155,
+    "text": ">>>>Sensor event in state: {p1}, event: {p2}, door: {p3}",
+    "shortText": null
+  },
+  {
+    "id": 156,
+    "text": "door {p1} cannot be opened",
+    "shortText": "Door {p1} failed"
+  },
+  {
+    "id": 157,
+    "text": "Verified credential for door {p1} could not be consumed",
+    "shortText": null
+  },
+  {
+    "id": 158,
+    "text": "Registering command handler for command: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 159,
+    "text": "Failed to parse JSON",
+    "shortText": null
+  },
+  {
+    "id": 160,
+    "text": "Invalid message envelope",
+    "shortText": null
+  },
+  {
+    "id": 161,
+    "text": ".. Received command: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 162,
+    "text": ".. Found handler for command: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 163,
+    "text": "Received message with unknown command",
+    "shortText": null
+  },
+  {
+    "id": 164,
+    "text": "WebSocket client #{p1} connected from {p2}",
+    "shortText": "Client {p1} online"
+  },
+  {
+    "id": 165,
+    "text": "WebSocket client #{p1} disconnected",
+    "shortText": "Client {p1} offline"
+  },
+  {
+    "id": 167,
+    "text": "Invalid client index {p1} for watchdog removal",
+    "shortText": null
+  },
+  {
+    "id": 168,
+    "text": "Removed watchdog entry for client #{p1}",
+    "shortText": null
+  },
+  {
+    "id": 169,
+    "text": "Watchdog entry limit reached, cannot track new client",
+    "shortText": null
+  },
+  {
+    "id": 170,
+    "text": "Client #{p1} timed out, closing connection",
+    "shortText": null
+  },
+  {
+    "id": 171,
+    "text": "Door {p1} opened",
+    "shortText": "Door {p1} open"
+  },
+  {
+    "id": 172,
+    "text": "Door {p1} closed",
+    "shortText": "Door {p1} closed"
+  },
+  {
+    "id": 173,
+    "text": "Password entry started",
+    "shortText": "Enter password"
+  },
+  {
+    "id": 174,
+    "text": "Password entry canceled",
+    "shortText": "Password canceled"
+  },
+  {
+    "id": 175,
+    "text": "Password entered",
+    "shortText": null
+  },
+  {
+    "id": 176,
+    "text": "Password verified for door {p1}",
+    "shortText": "PIN accepted"
+  },
+  {
+    "id": 177,
+    "text": "Password rejected",
+    "shortText": "Bad password"
+  },
+  {
+    "id": 178,
+    "text": "Code scanned",
+    "shortText": null
+  },
+  {
+    "id": 179,
+    "text": "Code verified for door {p1}",
+    "shortText": "Code accepted"
+  },
+  {
+    "id": 180,
+    "text": "Scanned code rejected",
+    "shortText": "Unknown code"
+  },
+  {
+    "id": 181,
+    "text": "Presence confirmation started",
+    "shortText": "Presence started"
+  },
+  {
+    "id": 182,
+    "text": "Presence confirmation canceled",
+    "shortText": "Presence canceled"
+  },
+  {
+    "id": 183,
+    "text": "Open command received",
+    "shortText": null
+  },
+  {
+    "id": 184,
+    "text": "PIN {p1}: credential {p2}",
+    "shortText": null
+  },
+  {
+    "id": 185,
+    "text": "PIN edit rejected: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 186,
+    "text": "Code {p1}: credential {p2}",
+    "shortText": null
+  },
+  {
+    "id": 187,
+    "text": "Code edit rejected: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 188,
+    "text": "VPN connected",
+    "shortText": null
+  },
+  {
+    "id": 189,
+    "text": "VPN disconnected",
+    "shortText": null
+  },
+  {
+    "id": 190,
+    "text": "Dropped {p1} log event(s) while remote logging was unavailable",
+    "shortText": "Logs dropped: {p1}"
+  },
+  {
+    "id": 191,
+    "text": "Log event A{p1} rejected: {p2}",
+    "shortText": "Invalid log event"
+  },
+  {
+    "id": 192,
+    "text": "Could not queue door {p1} open request",
+    "shortText": null
+  },
+  {
+    "id": 193,
+    "text": "State changed from {p1} to {p2}",
+    "shortText": null
+  },
+  {
+    "id": 194,
+    "text": "Timer event {p1}",
+    "shortText": null
+  },
+  {
+    "id": 195,
+    "text": "Password entry timed out",
+    "shortText": null
+  },
+  {
+    "id": 196,
+    "text": "Presence confirmation timed out",
+    "shortText": null
+  },
+  {
+    "id": 197,
+    "text": "Code scan started",
+    "shortText": null
+  },
+  {
+    "id": 198,
+    "text": "Code scan failed or timed out",
+    "shortText": null
+  },
+  {
+    "id": 199,
+    "text": "State read: {p1}",
+    "shortText": null
+  },
+  {
+    "id": 200,
+    "text": "Invalid credential type in request",
+    "shortText": null
+  },
+  {
+    "id": 201,
+    "text": "Scanner receive buffer overflow",
+    "shortText": null
+  },
+  {
+    "id": 202,
+    "text": "NVS {p1} failed for credential {p2}",
+    "shortText": null
+  },
+  {
+    "id": 203,
+    "text": "Malformed stored credential {p1}",
+    "shortText": null
+  }
+]

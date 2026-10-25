@@ -1,4 +1,5 @@
 #include "gpio_hal.h"
+#include "logger.h"
 #include <Arduino.h>
 #include "timer.h"
 #include "timeout.h"
@@ -31,7 +32,7 @@ uint8_t GpioHAL::openDoor(uint8_t doorNum) {
 uint8_t GpioHAL::readDoorState(uint8_t doorNum) {
                                                                 //  Combination doors have a number greater then number of physical doors, so we need to check the mapping for the logDoorNum rather than the index, and then check all doors that match the logDoorNum for their state. If all matching doors are in the same state, return that state, otherwise return mixed state. For example, if we have a combination of two adjacent doors operated together, they would share the same logDoorNum in the mapping, and we would check both of their state pins to determine the overall state of the combination.
   uint8_t doorState = DOOR_UNKNOWN;                            // Neutral door state at the beginning, will be set to open or closed based on the first door we check, and if we find any door with a different state, we will return mixed state
-  Serial.println("Reading state for logical door number: " + String(doorNum)); //###
+  logger.logPrint(A_DOOR_STATE_READ, LOGAREA_OPERATION, SEVERITY_DEBUG, doorNum); //###
   for (uint8_t i = 0; i < activeDoorNum; i++) {
     if (doorMappings[i].logDoorNum == doorNum && doorMappings[i].statePin != INVALID_PIN) { // Check if the door mapping matches the requested logical door number and has a valid state pin
       uint8_t readState = doorMappings[i].lastState;
@@ -103,7 +104,7 @@ uint8_t GpioHAL::lockDeactivate(uint8_t doorNum) {
     }
   }
   if (!lockDeactivated) {
-    Serial.println("Error: Invalid door number in lockDeactivate: " + String(doorNum));
+    logger.logPrint(A_INVALID_LOCK_DOOR, LOGAREA_SYSTEM, SEVERITY_ERROR, doorNum);
     return DOOR_UNKNOWN; // Return 255 if no door with the specified number was found
   } 
   return doorNum; // Return the door number that was attempted to be deactivated
@@ -196,7 +197,7 @@ void GpioHAL::initializeGpioHAL(TimerManager* timerManager, DoorMapping* initial
       doorMappings[i].lastState = false; // Default to closed
     }
   }
-  Serial.println("GPIO HAL loaded " + String(activeDoorNum) + " active doors:"); //###
+  logger.logPrint(A_GPIO_DOORS_LOADED, LOGAREA_SYSTEM, SEVERITY_INFO, activeDoorNum); //###
   this->timerManager = timerManager;
   this->ambientPin = ambientPin;
   if (this->ambientPin != INVALID_PIN) {
@@ -210,7 +211,7 @@ void GpioHAL::initializeGpioHAL(TimerManager* timerManager, DoorMapping* initial
     } else {
       doorMappings[i].lastState = false; // Default to closed if state pin is invalid
     }
-    Serial.print("Door " + String(i) + " (LogDoorNum: " + String(doorMappings[i].logDoorNum) + ") - State Pin: " + String(doorMappings[i].statePin) + ", Last State: " + String(doorMappings[i].lastState)); //###
+    logger.logPrint(A_GPIO_DOOR_MAPPING, LOGAREA_SYSTEM, SEVERITY_DEBUG, i, doorMappings[i].logDoorNum, doorMappings[i].statePin, doorMappings[i].lastState); //###
   } 
   
   for (uint8_t i = 0; i < activeDoorNum; ++i) {
