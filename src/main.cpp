@@ -374,50 +374,45 @@ void handleGetDiagnosticSnapshots(AsyncWebSocketClient *sender, JsonObj data)
 void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
 {
   logger.logPrint(A_OPEN_COMMAND_RECEIVED, LOGAREA_OPERATION, SEVERITY_CRITICAL);
-  const char* doorNumStr = data["doornum"];
   char presenceCode[PRESENCE_CODE_LENGTH + 1] = {0};
 
-  if (doorNumStr) {
-    JsonDocument response; 
-    char* endptr;
-    int64_t lnum = 0;
-    if (! integer(data[MSG_DOORNUM], 0, 254, lnum)) {
-      logger.logPrint(A_INVALID_DOOR_NUMBER, LOGAREA_OPERATION, SEVERITY_WARNING, lnum);
-      response[MSG_LASTRESULT] = ResultCode::invalidDoorNumber;
+  JsonDocument response; 
+  int64_t lnum = 0;
+  if (! integer(data[MSG_DOORNUM], 0, 254, lnum)) {
+    logger.logPrint(A_INVALID_DOOR_NUMBER, LOGAREA_OPERATION, SEVERITY_WARNING, lnum);
+    response[MSG_LASTRESULT] = ResultCode::invalidDoorNumber;
+    sendLastResult(sender, response);
+    return;
+  }
+  if (data[MSG_PRESENCECODE] != nullptr) {
+    strncat(presenceCode, data[MSG_PRESENCECODE], PRESENCE_CODE_LENGTH);
+  }
+  if (data[MSG_CHECKPRESENCE] != nullptr) {
+    bool checkPresence = data[MSG_CHECKPRESENCE];
+    if (checkPresence && strlen(presenceCode) == 0) {
+      logger.logPrint(A_PRESENCE_CODE_REQUIRED, LOGAREA_OPERATION, SEVERITY_WARNING);
+      response[MSG_LASTRESULT] = ResultCode::presenceNotProvided;
       sendLastResult(sender, response);
       return;
     }
-    if (data[MSG_PRESENCECODE] != nullptr) {
-      strncat(presenceCode, data[MSG_PRESENCECODE], PRESENCE_CODE_LENGTH);
+    if(checkPresence && (!boxStateMachine.isPresenceCodeValid() || strcmp(presenceCode, boxStateMachine.getPresenceCode()) != 0)) {
+      logger.logPrint(A_PRESENCE_CODE_INVALID, LOGAREA_OPERATION, SEVERITY_WARNING);
+      response[MSG_LASTRESULT] = ResultCode::presenceInvalid;
+      sendLastResult(sender, response);
+      return;
     }
-
-    if (data[MSG_CHECKPRESENCE] != nullptr) {
-      bool checkPresence = data[MSG_CHECKPRESENCE];
-      if (checkPresence && strlen(presenceCode) == 0) {
-        logger.logPrint(A_PRESENCE_CODE_REQUIRED, LOGAREA_OPERATION, SEVERITY_WARNING);
-        response[MSG_LASTRESULT] = ResultCode::presenceNotProvided;
-        sendLastResult(sender, response);
-        return;
-      }
-      if(checkPresence && (!boxStateMachine.isPresenceCodeValid() || strcmp(presenceCode, boxStateMachine.getPresenceCode()) != 0)) {
-        logger.logPrint(A_PRESENCE_CODE_INVALID, LOGAREA_OPERATION, SEVERITY_WARNING);
-        response[MSG_LASTRESULT] = ResultCode::presenceInvalid;
-        sendLastResult(sender, response);
-        return;
-      }
-    }
-    uint8_t num = static_cast<uint8_t>(lnum);
-
-    if (!webOpenRequests || xQueueSend(webOpenRequests, &num, 0) != pdTRUE) {
-      logger.logPrint(A_DOOR_QUEUE_FAILED, LOGAREA_SYSTEM, SEVERITY_ERROR, num);
-      response[MSG_LASTRESULT] = ResultCode::doorQueueFull;
-    } else {
-      logger.logPrint(A_DOOR_OPEN_QUEUED, LOGAREA_OPERATION, SEVERITY_INFO, num);
-      response[MSG_LASTRESULT] = ResultCode::openingDoorNumber;
-      response["lastresult_params"]["door_number"] = num;
-    }
-    sendLastResult(sender, response);
   }
+  uint8_t num = static_cast<uint8_t>(lnum);
+
+  if (!webOpenRequests || xQueueSend(webOpenRequests, &num, 0) != pdTRUE) {
+    logger.logPrint(A_DOOR_QUEUE_FAILED, LOGAREA_SYSTEM, SEVERITY_ERROR, num);
+    response[MSG_LASTRESULT] = ResultCode::doorQueueFull;
+  } else {
+    logger.logPrint(A_DOOR_OPEN_QUEUED, LOGAREA_OPERATION, SEVERITY_INFO, num);
+    response[MSG_LASTRESULT] = ResultCode::openingDoorNumber;
+    response["lastresult_params"]["door_number"] = num;
+  }
+  sendLastResult(sender, response);
 }
 
 void handleSetCred(AsyncWebSocketClient* sender, JsonObj data)
