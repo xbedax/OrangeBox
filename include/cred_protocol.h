@@ -7,3 +7,7 @@
 bool buildCredResponse(CredStorage& storage, JsonObjectConst request, JsonDocument& response);
 bool applyCredChange(CredStorage& storage, JsonObjectConst request, JsonDocument& response);
 const char* credTypeName(CredType type);
+namespace ParamChecks {
+    bool integer(JsonVariantConst value, int64_t minimum, int64_t maximum, int64_t& result);
+}
+    

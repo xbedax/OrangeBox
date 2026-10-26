@@ -5,6 +5,7 @@
 #include <cstring>
 #include <cstdlib>
 #include "config.h"
+#include <timeout.h>
 
 #ifndef LOG_HANDSHAKE_TIMEOUT
 #define LOG_HANDSHAKE_TIMEOUT 5000
@@ -42,7 +43,7 @@ void WebSocketLogTransport::begin()
 void WebSocketLogTransport::update(unsigned long currentMillis)
 {
     if (state == ConnectionState::Handshaking
-        && currentMillis - lastActivityMillis > LOG_HANDSHAKE_TIMEOUT) {
+        && timeoutElapsed(lastActivityMillis, LOG_HANDSHAKE_TIMEOUT, currentMillis)) {
         closeClient();
     }
 
@@ -54,7 +55,7 @@ void WebSocketLogTransport::update(unsigned long currentMillis)
 
     if (isConnected()
         && !hasPendingOutput()
-        && currentMillis - lastActivityMillis > LOG_IDLE_DISCONNECT_DELAY) {
+        && timeoutElapsed(lastActivityMillis, LOG_IDLE_DISCONNECT_DELAY, currentMillis)) {
         closeClient();
     }
 }

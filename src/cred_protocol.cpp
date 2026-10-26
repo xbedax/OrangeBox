@@ -4,6 +4,33 @@
 #include <cstring>
 #include <cstdio>
 
+
+namespace ParamChecks {
+// Form fields arrive as strings; native clients may send JSON integers.
+bool integer(JsonVariantConst value, int64_t minimum, int64_t maximum, int64_t& result) {
+    if (value.is<bool>()) return false;
+    if (value.is<int64_t>()) {
+        result = value.as<int64_t>();
+        return result >= minimum && result <= maximum;
+    }
+    const char* text = value.as<const char*>();
+    if (!text || !*text) return false;
+    bool negative = *text == '-';
+    if (negative) ++text;
+    if (!*text) return false;
+    int64_t number = 0;
+    for (; *text; ++text) {
+        if (*text < '0' || *text > '9') return false;
+        // All protocol numeric fields fit in uint32_t (or signed int32_t).
+        number = number * 10 + (*text - '0');
+        if (number > UINT32_MAX) return false;
+    }
+    result = negative ? -number : number;
+    return result >= minimum && result <= maximum;
+}
+
+}
+
 namespace {
 struct Fields {
     const char* id;
@@ -35,29 +62,7 @@ bool fail(JsonDocument& response, const char* reason, const char* resultCode) {
     return false;
 }
 
-// Form fields arrive as strings; native clients may send JSON integers.
-bool integer(JsonVariantConst value, int64_t minimum, int64_t maximum, int64_t& result) {
-    if (value.is<bool>()) return false;
-    if (value.is<int64_t>()) {
-        result = value.as<int64_t>();
-        return result >= minimum && result <= maximum;
-    }
-    const char* text = value.as<const char*>();
-    if (!text || !*text) return false;
-    bool negative = *text == '-';
-    if (negative) ++text;
-    if (!*text) return false;
-    int64_t number = 0;
-    for (; *text; ++text) {
-        if (*text < '0' || *text > '9') return false;
-        // All protocol numeric fields fit in uint32_t (or signed int32_t).
-        number = number * 10 + (*text - '0');
-        if (number > UINT32_MAX) return false;
-    }
-    result = negative ? -number : number;
-    return result >= minimum && result <= maximum;
-}
-
+using ParamChecks::integer;
 bool leap(int year) { return year % 4 == 0 && (year % 100 != 0 || year % 400 == 0); }
 int monthDays(int year, int month) {
     static const int lengths[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -122,8 +127,8 @@ bool buildCredResponse(CredStorage& storage, JsonObjectConst request, JsonDocume
         return fail(response, "invalid_cred_type", ResultCode::invalidCredType);
     response["credType"] = credTypeName(type);
     int64_t first = 0, count = 15;
-    if ((!request["credId"].isNull() && !integer(request["credId"], 0, LAST_KEY - 1, first))
-        || (!request["credCount"].isNull() && !integer(request["credCount"], 0, 100, count)))
+    if ((!request["credId"].isNull() && !ParamChecks::integer(request["credId"], 0, LAST_KEY - 1, first))
+        || (!request["credCount"].isNull() && !ParamChecks::integer(request["credCount"], 0, 100, count)))
         return fail(response, "invalid_pagination", ResultCode::invalidPagination);
     const Fields fields = fieldsFor(type);
     JsonObject rows = response["rows"].to<JsonObject>();
@@ -160,7 +165,7 @@ static bool applyCredChangeImpl(CredStorage& storage, JsonObjectConst request, J
         return fail(response, "txt_invalid_action", ResultCode::invalidAction);
     const bool deleting = strcmp(action, CRED_DELETE_BEACON) == 0;
     int64_t id;
-    if (!integer(request[fields.id], 0, LAST_KEY - 1, id) || (deleting && id == 0))
+    if (!ParamChecks::integer(request[fields.id], 0, LAST_KEY - 1, id) || (deleting && id == 0))
         return fail(response, "txt_invalid_cred_id", ResultCode::invalidCredId);
     CacheRecord cred = {};
     cred.credType = type;
@@ -184,7 +189,7 @@ static bool applyCredChangeImpl(CredStorage& storage, JsonObjectConst request, J
             return fail(response, "invalid_date_range", ResultCode::invalidDateRange);
         if (!request[MSG_DOORNUM].isNull()) {
             int64_t door;
-            if (!integer(request[MSG_DOORNUM], 0, 254, door))
+            if (!ParamChecks::integer(request[MSG_DOORNUM], 0, 254, door))
                 return fail(response, "txt_invalid_door", ResultCode::invalidDoor);
             cred.doorNum = static_cast<uint8_t>(door);
         }
@@ -195,7 +200,7 @@ static bool applyCredChangeImpl(CredStorage& storage, JsonObjectConst request, J
             if (unlimited.is<bool>() && unlimited.as<bool>()) cred.remaining = -1;
             else if (!request[MSG_REMAINING].isNull()) {
                 int64_t amount;
-                if (!integer(request[MSG_REMAINING], -1, INT32_MAX, amount)
+                if (!ParamChecks::integer(request[MSG_REMAINING], -1, INT32_MAX, amount)
                     || (unlimited.is<bool>() && amount < 0))
                     return fail(response, "txt_invalid_amount", ResultCode::invalidAmount);
                 cred.remaining = static_cast<int32_t>(amount);

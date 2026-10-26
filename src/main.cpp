@@ -129,9 +129,12 @@ DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
 
 void handleDueActions(uint8_t action, const char* arg);
 void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis);
+//bool ParamChecks::integer(JsonVariantConst value, int64_t minimum, int64_t maximum, int64_t& result);
 void refreshVpnLocalHost();
 bool startVpn();
 String buildDiagnosticsPage();
+
+using ParamChecks::integer;
 
 // Records the first wall-clock time obtained after boot, and where it came from; no-op once recorded.
 void recordStartTime(const char* source) {
@@ -377,8 +380,8 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
   if (doorNumStr) {
     JsonDocument response; 
     char* endptr;
-    unsigned long lnum = strtoul(doorNumStr, &endptr, 10);
-    if (lnum > 254 || *endptr != '\0') { // 0 is not a valid door number, and 255 is reserved for special purposes
+    int64_t lnum = 0;
+    if (! integer(data[MSG_DOORNUM], 0, 254, lnum)) {
       logger.logPrint(A_INVALID_DOOR_NUMBER, LOGAREA_OPERATION, SEVERITY_WARNING, lnum);
       response[MSG_LASTRESULT] = ResultCode::invalidDoorNumber;
       sendLastResult(sender, response);
@@ -387,6 +390,7 @@ void handleOpenBox(AsyncWebSocketClient *sender, JsonObj data)
     if (data[MSG_PRESENCECODE] != nullptr) {
       strncat(presenceCode, data[MSG_PRESENCECODE], PRESENCE_CODE_LENGTH);
     }
+
     if (data[MSG_CHECKPRESENCE] != nullptr) {
       bool checkPresence = data[MSG_CHECKPRESENCE];
       if (checkPresence && strlen(presenceCode) == 0) {
