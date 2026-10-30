@@ -30,6 +30,8 @@ class BoxStateMachine;
 class BoxKeyboard {
 public:
     void keyboardInit();
+    // Password input without events into the operating state machine.
+    void pollProvisioningPassword(keyboardStatus *keyboardState);
     void handleKeyboard(keyboardStatus *keyboardState, BoxStateMachine *stateMachine);
     void clearPassword(keyboardStatus *keyboardState);
     

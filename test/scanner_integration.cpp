@@ -22,19 +22,26 @@ static uint8_t actionLine, infoLine, responseLine, progress, uiAction;
 static uint8_t contactState = DOOR_CLOSED;
 static unsigned openCalls;
 static bool openSucceeds = true;
+static bool ambient;
+static uint32_t lockActivatedAt;
+static uint32_t verificationDelay;
+static uint32_t openingDisplayDelay;
 static BoxScanner* bridge;
 void BoxDisplay::setOpenDoorList() {}
 void BoxDisplay::writeStatusLine() {}
 void BoxDisplay::writeInfoLine(DisplayText v) { infoLine = v; }
 void BoxDisplay::writeActionLine(DisplayText v) { actionLine = v; }
-void BoxDisplay::writeResponseLine(DisplayText v) { responseLine = v; }
+void BoxDisplay::writeResponseLine(DisplayText v) {
+    responseLine = v;
+    if (v == RESPONSELINE_OPENING) delay(openingDisplayDelay);
+}
 void BoxDisplay::setPasswordLength(uint8_t) {}
 void BoxDisplay::setVerifyCode(const char*) {}
 void BoxDisplay::setProgressBar(uint8_t v) { progress = v; responseLine = RESPONSELINE_PROGRESS; }
 uint8_t GpioHAL::readDoorState(uint8_t) { return contactState; }
-uint8_t GpioHAL::openDoor(uint8_t door) { ++openCalls; return openSucceeds ? door : DOOR_UNKNOWN; }
-uint8_t GpioHAL::ambientOn() { return 1; }
-uint8_t GpioHAL::ambientOff() { return 0; }
+uint8_t GpioHAL::openDoor(uint8_t door) { ++openCalls; lockActivatedAt = testStubMillis; return openSucceeds ? door : DOOR_UNKNOWN; }
+uint8_t GpioHAL::ambientOn() { ambient = true; return 1; }
+uint8_t GpioHAL::ambientOff() { ambient = false; return 0; }
 void GpioHAL::getOpenDoors(bool* doors, uint8_t count) { memset(doors, 0, count); }
 
 static void stateChanged(BoxState oldState, BoxState newState, unsigned long) { bridge->onStateChanged(oldState, newState); }
@@ -172,8 +179,14 @@ int main() {
         event(machine, BoxEventType::KeyboardKey3);
         receive(uart, scanner, std::string("\x06\x00\r", 3));
         assert(machine.getCurrentState() == BoxState::Scan);
-        receive(uart, scanner, "HZ126895OTHER\r\n"); // Same configured prefix.
+        verificationDelay = DOOR_OPENING_TIMEOUT + 200;
+        openingDisplayDelay = 100;
+        receive(uart, scanner, "ABC-HZ1268956754M-XYZ\r\n"); // Scanned code contains the stored number.
+        verificationDelay = openingDisplayDelay = 0;
         assert(machine.getCurrentState() == BoxState::Opening && openCalls == before + 1);
+        assert(machine.getContext().doorOpenStartedAt == lockActivatedAt && ambient);
+        tick(machine, scanner, uint32_t(lockActivatedAt + DOOR_OPENING_TIMEOUT - 1));
+        assert(machine.getCurrentState() == BoxState::Opening && ambient);
         assert(machine.getBadPasswordCount() == 0);
         CacheRecord record;
         assert(credStorage.getCred(packetId, record, CredType::PacketNumber)); // Not consumed before contact opens.
@@ -187,16 +200,23 @@ int main() {
         assert(!credStorage.getCred(packetId, record, CredType::PacketNumber));
 #endif
         event(machine, BoxEventType::DoorClosed, 0);
+        assert(machine.getCurrentState() == BoxState::Closed && ambient);
         tick(machine, scanner, uint32_t(testStubMillis + AMBIENT_TIMEOUT));
-        assert(machine.getCurrentState() == BoxState::Home);
+        assert(machine.getCurrentState() == BoxState::Home && !ambient);
 
         // Even in scanner test mode, password credentials are still consumed.
         event(machine, BoxEventType::KeyboardKey1);
         BoxEventData password = {};
         password.eventType = BoxEventType::KeyboardEnter;
         strcpy(password.data.keyboardData.password, "12345678");
+        verificationDelay = DOOR_OPENING_TIMEOUT + 200;
+        openingDisplayDelay = 100;
         machine.processEvent(password);
+        verificationDelay = openingDisplayDelay = 0;
         assert(machine.getCurrentState() == BoxState::Opening);
+        assert(machine.getContext().doorOpenStartedAt == lockActivatedAt && ambient);
+        tick(machine, scanner, uint32_t(lockActivatedAt + DOOR_OPENING_TIMEOUT - 1));
+        assert(machine.getCurrentState() == BoxState::Opening && ambient);
         event(machine, BoxEventType::DoorOpened);
         assert(!credStorage.getCred(passwordId, record, CredType::Password));
         event(machine, BoxEventType::DoorClosed);
@@ -258,6 +278,8 @@ int main() {
 
 bool Logger::shouldLog(uint8_t) const { return true; }
 void Logger::emit(const LogEvent& event) {
+    if (event.record.message == A_CODE_VERIFIED || event.record.message == A_PASSWORD_VERIFIED)
+        delay(verificationDelay);
     loggedEvents.push_back(event.record.message);
     if (event.record.message >= A_DOOR_OPENED && event.record.message <= A_PRESENCE_CANCELED) {
         assert(event.record.severity == SEVERITY_CRITICAL);

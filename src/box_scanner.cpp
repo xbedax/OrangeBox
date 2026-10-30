@@ -75,7 +75,7 @@ void BoxScanner::update(unsigned long now) {
         // Ignore short acknowledgements and binary command responses there.
         || (scanned.type == QrScannerEventType::ActivationResponse
             && scanned.length >= PACKET_NUMBER_MIN && isText(scanned))) {
-        if (scanned.length < PACKET_NUMBER_MIN || scanned.length > PACKET_NUMBER_MAX || !isText(scanned)) {
+        if (scanned.length < PACKET_NUMBER_MIN || scanned.length > PACKET_SCAN_MAX || !isText(scanned)) {
             sendEvent(BoxEventType::ScannerInvalidCode);
             return;
         }

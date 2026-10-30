@@ -189,3 +189,8 @@ void BoxKeyboard::clearPassword(keyboardStatus *keyboardState){
 void BoxKeyboard::keyboardInit(){
   return;
 }
+
+void BoxKeyboard::pollProvisioningPassword(keyboardStatus *keyboardState) {
+  keyboardState->keyboardMode = KEYBOARD_MODE_PASSWORD;
+  pollKeyboard(keyboardState);
+}

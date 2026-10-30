@@ -21,6 +21,10 @@ public:
                           const char* path = LOG_SERVER_PATH);
 
     void begin() override;
+    // Call before begin(); strings must live for the lifetime of this transport.
+    void configure(const char* newHost, uint16_t newPort, const char* newPath) {
+        host = newHost; port = newPort; path = newPath;
+    }
     void update(unsigned long currentMillis) override;
     bool isConnected() const override;
 

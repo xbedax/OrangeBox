@@ -58,24 +58,24 @@
       <!-- Controls -->
       <section id="Controls">
         <article id="ControlBox">
-            <h2>Box control</h2>
+            <h2 data-i18n="L_box_control"></h2>
 			<fieldset id="door_controls"> <! door controls inside only>
             <div class="grid">
 			    <button class="primary" data-operation="opendoor" data-target="modal-confirm" onclick="toggleModal('modal-confirm')">
-                <P style="font-size:3px">&nbsp;</P><P style="font-size:50px"><strong>O&nbsp;p&nbsp;e&nbsp;n&nbsp; &nbsp; &nbsp;B&nbsp;O&nbsp;X</strong></P><P style="font-size:3px">&nbsp;</P>
+                <P style="font-size:3px">&nbsp;</P><P style="font-size:50px"><strong data-i18n="L_open_box"></strong></P><P style="font-size:3px">&nbsp;</P>
             </button>
 			</div>
 			</fieldset>
             <P>&nbsp;</P>
             <div class="grid">
                 <div class="grid">
-                <P>Door state:</P><P><img id="door_state_closed" src="door_closed.png" hidden alt="Closed"><img id="door_state_open" src="door_open.png" alt="Closed" hidden></P>
-                <P>Ambient: </P><P><img id="ambient_state_off" src="light_off.png" hidden alt="Off"><img id="ambient_state_on" src="light_on.png"  hidden alt="Off"></P> 
+                <P data-i18n="L_door_state"></P><P><img id="door_state_closed" src="door_closed.png" hidden alt="Closed"><img id="door_state_open" src="door_open.png" alt="Closed" hidden></P>
+                <P data-i18n="L_ambient"></P><P><img id="ambient_state_off" src="light_off.png" hidden alt="Off"><img id="ambient_state_on" src="light_on.png"  hidden alt="Off"></P> 
                 </div>
             </div>
             <P>&nbsp;</P>
             <div class="grid">
-                <P>Camera data: </P><P><img class="camerawindow" src="camera_mockup.png" width="320"> </P>
+                <P data-i18n="L_camera_data"></P><P><img class="camerawindow" src="camera_mockup.png" width="320"> </P>
             </div>
         </article>
       </section>
@@ -84,7 +84,7 @@
       <!-- PINs -->
       <section id="tables">
         <article id="pintablearticle">
-            <h2>Active PINs</h2>
+            <h2 data-i18n="L_active_pins"></h2>
             <div class="overflow-auto">
             <table role="grid" id="pinTable">
                 <col />
@@ -94,15 +94,15 @@
                 <col />
                 <thead id="pinTableHead">
                 <tr> <!--It is necessary to  allign name attribute of columns with id of corresponding modal input-->
-                    <th scope="col" name="pinid">Id</th>
-                    <th scope="col" name="pinname">Name</th>
-                    <th scope="col" name="pinvalue">Value</th>
-                    <th scope="col" name="datefrom">Not before</th>
-                    <th scope="col" name="dateto">Not After</th>
-                    <th scope="col" name="amount">Count</th>
+                    <th scope="col" name="pinid" data-i18n="L_Id"></th>
+                    <th scope="col" name="pinname" data-i18n="L_Name"></th>
+                    <th scope="col" name="pinvalue" data-i18n="L_Value"></th>
+                    <th scope="col" name="datefrom" data-i18n="L_Not_before"></th>
+                    <th scope="col" name="dateto" data-i18n="L_Not_after"></th>
+                    <th scope="col" name="amount" data-i18n="L_Count">Count</th>
                 </tr>
                 </thead>
-                <tbody id="pinrows" data-tooltip="Click row to show / edit details">
+                <tbody id="pinrows" data-tooltip=tr(L_Click_row)>
                 <tr>
                     <td>&nbsp;</td>
                     <td>N&nbsp;O&nbsp;&nbsp;&nbsp;P&nbsp;I&nbsp;N&nbsp;s</td>
@@ -113,9 +113,7 @@
                 </tbody>
             </table>
             </div>
-            <button class="contrast" data-target="modal-pin" onclick='toggleModal("modal-pin")'>
-              Add new
-            </button>
+            <button class="contrast" data-target="modal-pin" onclick='toggleModal("modal-pin")' data-i18n="L_Add_new"></button>
 
         </article>
       </section>
@@ -124,7 +122,7 @@
       <!-- Codes -->
       <section id="codetables">
         <article id="codetablearticle">
-            <h2>Active Codes</h2>
+            <h2 data-i18n="L_Active_codes"></h2>
             <div class="overflow-auto">
             <table role="grid" id="codeTable">
                 <col />
@@ -134,14 +132,14 @@
                 <col />
                 <thead id="codeTableHead">
                 <tr> <!--It is necessary to  allign name attribute of columns with id of corresponding modal input-->
-                    <th scope="col" name="codeid">Id</th>
-                    <th scope="col" name="codename">Name</th>
-                    <th scope="col" name="codevalue">Value</th>
-                    <th scope="col" name="codefrom">Not before</th>
-                    <th scope="col" name="codeto">Not After</th>
+                    <th scope="col" name="codeid" data-i18n="L_Id"></th>
+                    <th scope="col" name="codename" data-i18n="L_Name"></th>
+                    <th scope="col" name="codevalue"data-i18n="L_Value"></th>
+                    <th scope="col" name="codefrom" data-i18n="L_Not_before"></th>
+                    <th scope="col" name="codeto" data-i18n="L_Not_after"></th>
                 </tr>
                 </thead>
-                <tbody id="coderows" data-tooltip="Click row to show / edit details">
+                <tbody id="coderows"  data-tooltip="" data-i18n-tooltip="L_Click_row">
                 <tr>
                     <td>&nbsp;</td>
                     <td>N&nbsp;O&nbsp;&nbsp;&nbsp;c&nbsp;o&nbsp;d&nbsp;e&nbsp;s</td>
@@ -152,9 +150,7 @@
                 </tbody>
             </table>
             </div>
-            <button class="contrast" data-target="modal-code" onclick='toggleModal("modal-code")'>
-              Add new
-            </button>
+            <button class="contrast" data-target="modal-code" onclick='toggleModal("modal-code")' data-i18n="L_Add_new"></button>
 
         </article>
       </section>
@@ -180,8 +176,7 @@
                     <path fill="#ff7f00" stroke-linejoin="round" stroke-linecap="round" stroke-width="2" stroke="#000000" d="m0,18.10953l0,94.16954c0,3.3662 0,5.04894 0.34228,6.44844c1.40553,5.74724 6.92532,10.24202 13.99163,11.3851c1.72064,0.27816 3.78988,0.27816 7.92837,0.27816c4.13839,0 6.21556,0 7.93621,-0.27816c7.06631,-1.14307 12.58913,-5.63786 13.99466,-11.3851c0.33925,-1.38719 0.33925,-3.05327 0.33925,-6.36007l0,-94.34651c0,-3.30694 0,-4.97577 -0.33925,-6.36289c-1.40553,-5.74717 -6.93236,-10.23652 -13.99858,-11.37966c-1.72073,-0.27838 -3.78997,-0.27838 -7.92837,-0.27838c-4.13839,0 -6.21164,0 -7.93229,0.27838c-7.06631,1.14315 -12.5861,5.6325 -13.99163,11.37966c-0.34228,1.39943 -0.34228,3.08557 -0.34228,6.45148z"/>
               </svg>
             </div>
-            <div id="lastresult"></div>
-                    Box time: <div id="boxtime" > T </div>
+            <div id="lastresult"></div><div data-i18n="L_Box_time"></div><div id="boxtime" > T </div>
           </div>
         </article>
       </section>
@@ -207,31 +202,30 @@
             data-target="modal-confirm"
             onclick="toggleModal('modal-confirm')"
           ></button>
-          <h3>Really open?</h3>
+          <h3 data-i18n="L_Open_confirm"></h3>
         </header>
          <form id="confirmForm">
             <div class="grid">
             <input type="hidden" name="_command_" id="_command_" value="opendoor" > <br>
             <input type="hidden" name="doornum" id="doornum" value="0">
             </div>
-        <p>
-          Be sure there is somebody next to the BOX. You can NOT close it otherwise.
-        </p>
+        <p data-i18n="L_Be_sure"></p>
 		 <div class="grid">
                   <div>
-                    <label for="presence">Presence Code</label>
+                    <label for="presence" data-i18n="L_Presence_code"></label>
                     <input
                     type="text"
                     name="presence"
                     id="presence"
-                    placeholder="Presence code"
+                    placeholder=""
+					data-i18n-placeholder="L_Presence_act"
                     aria-label="presence presence"
 					value="X"
 					disabled="true"
                     >
                   </div>
                   <div align="center">
-                    <label for="checkbox-presence">Verify Code</label>
+                    <label for="checkbox-presence" data-i18n="L_Verify_code"></label>
                     <input type="checkbox" id="checkbox-presence" name="checkbox-presence" onclick= togglePresence(event) >
                   </div>
 
@@ -242,11 +236,8 @@
             class="secondary"
             data-target="modal-confirm"
             onclick="toggleModal('modal-confirm')"            
-          >
-            Cancel</button
-          ><button autofocus data-operation="opendoor" data-target="modal-confirm" id="buttonconfirm" onclick="submitModal(event)">
-            Confirm
-          </button>
+           data-i18n="L_Btn_cancel"></button
+          ><button autofocus data-operation="opendoor" data-target="modal-confirm" id="buttonconfirm" onclick="submitModal(event)" data-i18n="L_Btn_confirm"></button>
         </form>
         </footer>
       </article>
@@ -261,7 +252,7 @@
             data-target="modal-pin"
             onclick="toggleModal('modal-pin')"
           ></button>
-          <h3>PIN details</h3>
+          <h3 data-i18n="L_Pin_details"></h3>
         </header>
             <form id="pinForm" autocomplete="off">
                 <input type="hidden" name="_command_" value="set_cred">
@@ -269,24 +260,27 @@
 				<input type="hidden" name="credType" value="ctPin">
                 <div class="grid">
                   <div>
-                    <label for="pinname">PIN name</label>
+                    <label for="pinname" data-i18n="L_Name"></label>
                     <input
                     type="text"
                     name="pinname"
+					maxlength="10"
                     id="pinname"
-                    placeholder="PIN name"
+                    placeholder=""
+					data-i18n-placeholder="L_Pin_name"
                     aria-label="name name"
                     required
                     >
                   </div>
                   <div>
-                    <label for="pinvalue">PIN value</label>
+                    <label for="pinvalue" data-i18n="L_Value"></label>
                     <input
                     type="number"
                     maxlength="8"
                     id = "pinvalue";
                     name="pinvalue"
-                    placeholder="PIN value"
+                    placeholder=""
+					data-i18n-placeholder="L_Pin_value"
                     aria-label="PIN value"
                     required
                     >
@@ -294,7 +288,7 @@
                 </div>
                 <div class="grid">
                   <div>
-                    <label for="amount">Use #</label>
+                    <label for="amount" data-i18n="L_Use_num"></label>
                     <input
                     type="number"
                     name="amount"
@@ -310,17 +304,17 @@
                     >
                   </div>
                   <div align="center">
-                    <label for="checkbox-unlimited">Unlimited</label>
+                    <label for="checkbox-unlimited" data-i18n="L_Lab_unlimited"></label>
                     <input type="checkbox" id="checkbox-unlimited" name="checkbox-unlimited" onclick= toggleCount(event) checked>
                   </div>
                   <div>
                     <label for="btnpropose">&nbsp;</label>
-                    <button  class="contrast" type="button" id="btnpropose" onclick="getPin(event)">Propose</button>
+                    <button  class="contrast" type="button" id="btnpropose" onclick="getPin(event)" data-i18n="L_Btn_propose"></button>
                   </div>
                 </div>
                 <div class="grid">
                   <div>
-                    <label for="datefrom">Not before</label>
+                    <label for="datefrom" data-i18n="L_Not_before"></label>
                     <input
                     type="date"
                     name="date from"
@@ -329,10 +323,10 @@
                     aria-label="Date from"
                     autocomplete="date"
                     >
-                    <small>Prázdné datum znamená neomezenou platnost.</small>
+                    <small data-i18n="L_Empty_meaning"></small>
                   </div>
                   <div>
-                    <label for="dateto">Not after</label>
+                    <label for="dateto" data-i18n="L_Not_after"></label>
                     <input
                     type="date"
                     name="date to"
@@ -341,14 +335,14 @@
                     aria-label="Date to"
                     autocomplete="date"
                     >
-                    <small>Prázdné datum znamená neomezenou platnost.</small>
+                    <small data-i18n="L_Empty_meaning"></small>
                   </div>
                 </div>
                 <!--<button type="submit">Subscribe</button>-->
                 <div class="grid">
-                <button id="savebutton" type="button" data-target="modal-pin" onclick="submitModal(event)">Save</button>
-                <button id="deletebutton" data-action="deletebutton" type="button" data-target="modal-pin" onclick="submitModal(event)" class="secondary">Delete</button>
-                <button id="cancelbutton" type="button" autofocus data-target="modal-pin" onclick="toggleModal('modal-pin')" class="secondary">Cancel</button>
+                <button id="savebutton" type="button" data-target="modal-pin" onclick="submitModal(event)" data-i18n="L_Btn_save"></button>
+                <button id="deletebutton" data-action="deletebutton" type="button" data-target="modal-pin" onclick="submitModal(event)" class="secondary" data-i18n="L_Btn_delete"></button>
+                <button id="cancelbutton" type="button" autofocus data-target="modal-pin" onclick="toggleModal('modal-pin')" class="secondary" data-i18n="L_Btn_cancel"></button>
                 </div>
             </form>
         </article>
@@ -363,7 +357,7 @@
             data-target="modal-code"
             onclick="toggleModal('modal-code')"
           ></button>
-          <h3>Code details</h3>
+          <h3 data-i18n="L_Code_details"></h3>
         </header>
             <form id="codeForm" autocomplete="off">
                 <input type="hidden" name="_command_" value="set_cred">
@@ -371,24 +365,26 @@
 				<input type="hidden" name="credType" value="ctCode">
                 <div class="grid">
                   <div>
-                    <label for="codename">Code name</label>
+                    <label for="codename" data-i18n="L_Name"></label>
                     <input
                     type="text"
                     name="codename"
                     id="codename"
-                    placeholder="Code name"
+                    placeholder=""
+					data-i18n-placeholder="L_Code_name"
                     aria-label="name name"
                     required
                     >
                   </div>
                   <div>
-                    <label for="codevalue">Code value</label>
+                    <label for="codevalue" data-i18n="L_Code_value"></label>
                     <input 
                     type="text"
                     maxlength="20"
                     id = "codevalue";
                     name="codevalue"
-                    placeholder="Code value"
+					placeholder=""
+					data-i18n-placeholder="L_Code_value"
                     aria-label="Code value"
                     required
                     >
@@ -396,7 +392,7 @@
                 </div>
                 <div class="grid">
                   <div>
-                    <label for="datefrom">Not before</label>
+                    <label for="datefrom" data-i18n="L_Not_before"></label>
                     <input
                     type="date"
                     name="codefrom"
@@ -405,10 +401,10 @@
                     aria-label="Date from"
                     autocomplete="date"
                     >
-                    <small>Prázdné datum znamená neomezenou platnost.</small>
+                    <small data-i18n="L_Empty_meaning"></small>
                   </div>
                   <div>
-                    <label for="codeto">Not after</label>
+                    <label for="codeto" data-i18n="L_Not_after"></label>
                     <input
                     type="date"
                     name="date to"
@@ -417,14 +413,14 @@
                     aria-label="Date to"
                     autocomplete="date"
                     >
-                    <small>Prázdné datum znamená neomezenou platnost.</small>
+                    <small data-i18n="L_Empty_meaning"></small>
                   </div>
                 </div>
                 <!--<button type="submit">Subscribe</button>-->
                 <div class="grid">
-                <button id="code-savebutton" data-action="savebutton" type="button" data-target="modal-code" onclick="submitModal(event)">Save</button>
-                <button id="code-deletebutton" data-action="deletebutton" type="button" data-target="modal-code" onclick="submitModal(event)" class="secondary">Delete</button>
-                <button id="code-cancelbutton" type="button" autofocus data-target="modal-code" onclick="toggleModal('modal-code')" class="secondary">Cancel</button>
+                <button id="code-savebutton" data-action="savebutton" type="button" data-target="modal-code" onclick="submitModal(event)" data-i18n="L_Btn_save"></button>
+                <button id="code-deletebutton" data-action="deletebutton" type="button" data-target="modal-code" onclick="submitModal(event)" class="secondary" data-i18n="L_Btn_delete"></button>
+                <button id="code-cancelbutton" type="button" autofocus data-target="modal-code" onclick="toggleModal('modal-code')" class="secondary" data-i18n="L_Btn_cancel"></button>
                 </div>
             </form>
         </article>
@@ -435,6 +431,14 @@
     <script src="js/pingenerator.js"></script>
     <script src="js/clicktable.js"></script>
     <script src="js/websoc.js"></script>
+	<script src="js/translations.js"></script>
+    <script>
+        function formatResult(code, params = {}) {
+            const values = params && typeof params === "object" ? params : {};
+            return tr(code).replace(/<([a-z_]+)>/g, (placeholder, name) =>
+                Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : placeholder);
+        }
+    </script>
     <script>
         const pinsInTable = 15;
         const connIds = ["stateOffline", "statePause", "stateOnline"];
@@ -480,17 +484,6 @@
 		function handleMessage(myObj){
 			var command = myObj["_command_"];
 			var keys = Object.keys(myObj["data"]);
-			if ( command == "c_visibility") {
-				for (var i = 0; i < keys.length; i++){
-				  var key = keys[i];
-				  console.log("Visibility for key: " + key);
-				  if ( myObj["data"][key] == 'no') {
-					document.getElementById(key).hidden = true;
-				  }else{
-					document.getElementById(key).hidden = false;
-				  }  
-				}
-			}
 			if ( command == "c_ambientstate") {
 				console.log("Ambient state: " + myObj["data"]["state"]);
 				if ( myObj["data"]["state"] == 'on') {
@@ -540,7 +533,9 @@
             }
             if (command == "c_lastresult") {
                 if (typeof myObj.data.lastresult === "string") {
-                    document.getElementById("lastresult").innerHTML = myObj.data.lastresult;
+                    document.getElementById("lastresult").textContent = myObj.data.lastresult === ""
+                        ? ""
+                        : formatResult(myObj.data.lastresult, myObj.data.params);
                 }
                 return;
             }
@@ -570,14 +565,6 @@
 				console.log("Changing key: " + htmlBeacon);
 				document.getElementById(htmlBeacon).innerHTML = "";
 				document.getElementById(htmlBeacon).innerHTML = htmlContent;
-			}
-			if ( command == "c_content") {
-				for (var i = 0; i < keys.length; i++){
-					var key = keys[i];
-					console.log("Changing key: " + key);
-					document.getElementById(key).innerHTML = "";
-					document.getElementById(key).innerHTML = myObj["data"][key];
-				}
 			}
 		}
 		function stateUpdater () {
@@ -621,7 +608,7 @@
 			data["lightId"] = lightNum;
 			postFormData(data, "get_ambient");
 		}
-		function getStatusContent () {
+		function getStatus () {
 			const data = {};  
 			data["dummy"] = "-"
 			postFormData(data, "get_status");
@@ -639,7 +626,7 @@
                 html += '<tr>' + cols.map(col => {
                     const value = rows[col][i] ?? '';
                     if (Object.hasOwn(credDateBounds, col)) {
-                        const text = value === '' || value === credDateBounds[col] ? 'Neomezeno' : value;
+                        const text = value === '' || value === credDateBounds[col] ? tr("L_Unlimited") : value;
                         const raw = escapeCredText(value).replace(/"/g, '&quot;');
                         return `<td data-cred-value="${raw}">${escapeCredText(text)}</td>`;
                     }
@@ -675,9 +662,11 @@
 			getCreds(0, codesInTable, 2);
 			getDoorState(0);
 			getAmbientState(0);
-			getStatusContent();
+			getStatus();
 			addRowHandlers("pin");
 			addRowHandlers("code");
+			selectedLanguage = getLanguage();
+			translatePage();
 			window.setInterval (stateUpdater, 2000);
 		};
 

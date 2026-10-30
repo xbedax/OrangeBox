@@ -61,7 +61,7 @@ struct BoxEventData {
             char password[33];              // For KeyboardEnter
         } keyboardData;
         struct {
-            char cred[PACKET_NUMBER_MAX + 1];
+            char cred[PACKET_SCAN_MAX + 1];
         } scannerData;
         struct {
             uint8_t doorNum;                // For WebOpenBox and door sensor events
@@ -115,6 +115,7 @@ struct BoxStateContext {
  */
 class BoxStateMachine {
 public:
+    void setScannerTestKeepCred(bool enabled) { scannerTestKeepCred = enabled; }
     BoxStateMachine();
     
     // Initialize the state machine
@@ -140,10 +141,20 @@ public:
     typedef void (*StateChangeCallback)(BoxState oldState, BoxState newState, unsigned long currentMillis);
     typedef void (*UIUpdateCallback)(uint8_t action);
     void setStateChangeCallback(StateChangeCallback callback);
-    void setUIUpdateCallback(UIUpdateCallback callback) { onUIUpdate = callback; }
+    void setUIUpdateCallback(UIUpdateCallback callback) {
+        onUIUpdate = callback;
+        if (onUIUpdate && lastUIAction != 0) {
+            onUIUpdate(lastUIAction);
+        }
+    }
     bool isExternalEnabled() const;
     
 private:
+#ifdef QR_SCANNER_TEST_KEEP_CRED
+    bool scannerTestKeepCred = true;
+#else
+    bool scannerTestKeepCred = false;
+#endif
     BoxStateContext context;
     
     // Callback

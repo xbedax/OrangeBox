@@ -34,7 +34,7 @@ static constexpr  char const* langDisplayText[][TEXT_LINE_COUNT] = {
         "OPENING",
         "BAD PASSWORD",
         "REMAINING: ",
-        _VERSION_,
+        _VERSION_ + __COUNTER__,
         "                    ",
         "INVALID CODE"
     },
@@ -363,6 +363,19 @@ void BoxDisplay::displayInit(GpioHAL* gpioHal) {
   lcd1.backlight();
   lcd1.setCursor(0, 1);
   lcd1.println("OrangeBOX");
+#endif
+}
+
+void BoxDisplay::writeProvisioning(const char* title, const char* action, const char* detail) {
+#ifdef DISP_LCD
+  const char* rows[] = {title, action, detail, ""};
+  for (uint8_t row = 0; row < 4; ++row) {
+    lcd1.setCursor(0, row);
+    String line(rows[row]);
+    line = line.substring(0, LCD_WIDTH);
+    while (line.length() < LCD_WIDTH) line += ' ';
+    lcd1.print(line.c_str());
+  }
 #endif
 }
 

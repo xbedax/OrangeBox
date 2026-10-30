@@ -5,7 +5,7 @@
 #include <cstring>
 
 #define QR_SCANNER_PIN_UNUSED 255
-#define QR_SCANNER_MAX_FRAME_LEN 160
+#define QR_SCANNER_MAX_FRAME_LEN 1024
 
 enum class QrScannerActivationMode : uint8_t {
   Manual = 0,

@@ -158,6 +158,7 @@ public:
 
 // Initialize the selected display hardware.
 void displayInit(GpioHAL* gpioHal);
+void writeProvisioning(const char* title, const char* action, const char* detail = "");
 
 // Display stars for password input, with length up to PASS_MAX.
 // void displayPassword(uint8_t pass_len);

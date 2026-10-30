@@ -27,6 +27,7 @@ static Preferences storage() {
 
 static CredRecord read(uint32_t id) {
     char key[9];
+    
     std::snprintf(key, sizeof(key), "%08X", id);
     CredRecord rec;
     assert(storage().getBytes(key, &rec, sizeof(rec)) == sizeof(rec));
@@ -73,8 +74,17 @@ int main() {
     assert(creds.verifyCred(nullptr) == DOOR_UNKNOWN);
     std::string scanned = packetText;
     if (PACKET_NUMBER_MATCH < PACKET_NUMBER_MAX) scanned.back() = 'B';
-    assert(creds.verifyCred(scanned.c_str(), CredType::PacketNumber) == 2);
-    assert(creds.usedCred(2));
+    assert(creds.verifyCred(scanned.c_str(), CredType::PacketNumber) == DOOR_UNKNOWN);
+
+    const std::string embeddedNumber(PACKET_NUMBER_MIN, 'A');
+    auto embedded = credential(CredType::PacketNumber, embeddedNumber, 3);
+    embedded.credId = creds.addCred(embedded);
+    assert(embedded.credId);
+    const std::string enclosingCode = "X" + embeddedNumber + "Y";
+    assert(creds.verifyCred(enclosingCode.c_str(), CredType::PacketNumber) == 3);
+    assert(creds.usedCred(3));
+    assert(creds.removeCred(embedded) == embedded.credId);
+
     scanned[0] = 'C';
     assert(creds.verifyCred(scanned.c_str(), CredType::PacketNumber) == DOOR_UNKNOWN);
 
@@ -89,7 +99,9 @@ int main() {
     assert(!creds.addCred(bad));
     const std::string shortPacket(PACKET_NUMBER_MIN - 1, 'A');
     assert(!creds.addCred(credential(CredType::PacketNumber, shortPacket, 2)));
-    assert(creds.verifyCred((packetText + "A").c_str(), CredType::PacketNumber) == DOOR_UNKNOWN);
+    assert(creds.verifyCred((packetText + "A").c_str(), CredType::PacketNumber) == 2);
+    assert(creds.usedCred(2));
+    assert(creds.verifyCred(std::string(PACKET_SCAN_MAX + 1, 'A').c_str(), CredType::PacketNumber) == DOOR_UNKNOWN);
     auto minimum = credential(CredType::PacketNumber, std::string(PACKET_NUMBER_MIN, 'Z'), 5);
     minimum.credId = creds.addCred(minimum);
     assert(minimum.credId);

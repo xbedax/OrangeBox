@@ -585,6 +585,9 @@ void BoxStateMachine::onExitPresence() {
 void BoxStateMachine::onEnterOpening(unsigned long currentMillis) {
     disableExternal();
     boxDisplay.writeResponseLine(RESPONSELINE_OPENING);
+    // Verification, logging and display writes can outlast the opening timeout.
+    // Start the full contact-wait interval when we actually activate the lock.
+    currentMillis = millis();
     if (context.doorToOpen != DOOR_UNKNOWN && gpioHal.openDoor(context.doorToOpen) == context.doorToOpen) {
         context.doorOpenStartedAt = currentMillis;
         context.doorOpenDuration = DOOR_OPENING_TIMEOUT;
@@ -603,9 +606,7 @@ void BoxStateMachine::onExitOpening() {
 void BoxStateMachine::onEnterOpen(unsigned long currentMillis) {
     logger.logPrint(A_DOOR_OPENED, LOGAREA_OPERATION, SEVERITY_CRITICAL, context.doorToOpen);
     bool consumeCred = context.credVerified;
-#ifdef QR_SCANNER_TEST_KEEP_CRED
-    if (context.scannedCredVerified) consumeCred = false;
-#endif
+    if (scannerTestKeepCred && context.scannedCredVerified) consumeCred = false;
     if (consumeCred && !credStorage.usedCred(context.doorToOpen)) {
         logger.logPrint(A_CREDENTIAL_CONSUME_FAILED, LOGAREA_ACCESS, SEVERITY_ERROR, context.doorToOpen);
     }
@@ -706,17 +707,21 @@ bool BoxStateMachine::areAllDoorsClosed() const {
 
 // Enables external commands, e.g., allowing the UI to control door actions.
 void BoxStateMachine::enableExternal() {
-    if(onUIUpdate && lastUIAction != UI_ENABLE_DOOR_CONTROLS) {
+    if (lastUIAction != UI_ENABLE_DOOR_CONTROLS) {
         lastUIAction = UI_ENABLE_DOOR_CONTROLS;
-        onUIUpdate(UI_ENABLE_DOOR_CONTROLS);
+        if (onUIUpdate) {
+            onUIUpdate(UI_ENABLE_DOOR_CONTROLS);
+        }
     }
 }
 
 // Disables external commands, e.g. when the box is in a state where it should not be controlled externally (like during door opening).
 void BoxStateMachine::disableExternal() {
-    if(onUIUpdate && lastUIAction != UI_DISABLE_DOOR_CONTROLS) {
+    if (lastUIAction != UI_DISABLE_DOOR_CONTROLS) {
         lastUIAction = UI_DISABLE_DOOR_CONTROLS;
-        onUIUpdate(UI_DISABLE_DOOR_CONTROLS);
+        if (onUIUpdate) {
+            onUIUpdate(UI_DISABLE_DOOR_CONTROLS);
+        }
     }
 }
 

@@ -6,6 +6,28 @@
 #endif
 
 /*-----------------------*/
+/*  Provisioning check   */
+/*-----------------------*/
+
+#ifndef BOX_PROVISIONED
+#define BOX_PROVISIONED 0
+#endif
+
+// Factory initialization PIN: exactly eight digits. Replace before deployment.
+#ifndef BOX_INIT_PASSWORD
+#define BOX_INIT_PASSWORD "12345678"
+#endif
+// PEM root CA for the provisioning HTTPS server. Empty means fail closed.
+// Optional local header defines BOX_PROVISIONING_CA as a PEM string literal.
+#if !defined(BOX_PROVISIONING_CA) && __has_include("provisioning_ca.h")
+#include "provisioning_ca.h"
+#endif
+#ifndef BOX_PROVISIONING_CA
+#define BOX_PROVISIONING_CA ""
+#endif
+
+
+/*-----------------------*/
 /* Configuration options */
 /*-----------------------*/
 
@@ -55,6 +77,8 @@
 #define PACKET_NUMBER_MIN 8
 #define PACKET_NUMBER_MAX 20
 #define PACKET_NUMBER_MATCH 8
+// Scanned code may be longer than the stored packet number and merely contain it.
+#define PACKET_SCAN_MAX 64
 
 // Password entry settings
 #define PASS_MAX PIN_CODE_LEN
@@ -120,7 +144,7 @@
 #define QR_SCANNER_FRAME_IDLE_MS 40
 #endif
 #ifndef QR_SCANNER_SCAN_TIMEOUT_MS
-#define QR_SCANNER_SCAN_TIMEOUT_MS 5000
+#define QR_SCANNER_SCAN_TIMEOUT_MS 9000
 #endif
 #ifndef QR_SCANNER_STUB_CONSOLE_BAUD
 #define QR_SCANNER_STUB_CONSOLE_BAUD 9600
@@ -142,6 +166,27 @@
 #endif
 
 // VPN / reverse proxy routing
+#ifndef VPN_GATEWAY_HOST
+#define VPN_GATEWAY_HOST ""
+#endif
+#ifndef VPN_GATEWAY_PORT
+#define VPN_GATEWAY_PORT 8080
+#endif
+#ifndef VPN_USERNAME
+#define VPN_USERNAME ""
+#endif
+#ifndef VPN_GATEWAY_KEY_TYPE
+#define VPN_GATEWAY_KEY_TYPE ""
+#endif
+#ifndef VPN_GATEWAY_FINGERPRINT
+#define VPN_GATEWAY_FINGERPRINT ""
+#endif
+#ifndef VPN_PUBLIC_KEY
+#define VPN_PUBLIC_KEY ""
+#endif
+#ifndef VPN_PRIVATE_KEY
+#define VPN_PRIVATE_KEY ""
+#endif
 // Apache currently identifies a box instance by this remote forward port.
 // Override VPN_REMOTE_BIND_PORT in credentials.h for each deployed box.
 #ifndef VPN_REMOTE_BIND_PORT

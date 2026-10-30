@@ -306,6 +306,7 @@ static void printHelp()
   Serial.println("Commands:");
   Serial.println("  help or ?             show this help");
   Serial.println("  status                show scanner state");
+  Serial.println("  tst                   show scanner UART baudrate");
   Serial.println("  config                show UART/pin/command configuration");
   Serial.println("  start [timeout_ms]    activate with configured command/switch and wait for code");
   Serial.println("  act <payload>         activate with custom payload and wait for code");

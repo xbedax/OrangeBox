@@ -1,0 +1,27 @@
+{
+  "sandbox": {
+    "BOX_PROVISIONED": 1,
+    "QR_SCANNER_TEST_KEEP_CRED": false,
+    "DISP_LANG": 1,
+    "BOX_HOST_NAME": "Box-089",
+    "WIFI_SSID": "MojeWifi",
+    "WIFI_PASSWD": "replace-me",
+    "LOG_SERVER_IP": "logs.example.org",
+    "LOG_SERVER_PORT": 3001,
+    "LOG_SERVER_PATH": "/log",
+    "NTP_SERVER": "tak.cesnet.cz",
+    "GMT_OFFSET_SEC": 3600,
+    "DAYLIGHT_OFFSET_SEC": 3600,
+    "VPN_GATEWAY_HOST": "vpn.example.org",
+    "VPN_GATEWAY_PORT": 8083,
+    "VPN_USERNAME": "box089",
+    "VPN_REMOTE_BIND_PORT": 8084,
+    "VPN_GATEWAY_KEY_TYPE": "ecdsa-sha2-nistp256",
+    "VPN_GATEWAY_FINGERPRINT": "REPLACE_WITH_SERVER_FINGERPRINT",
+    "VPN_PUBLIC_KEY": "REPLACE_WITH_BOX_PUBLIC_KEY",
+    "VPN_PRIVATE_KEY": "REPLACE_WITH_BOX_PRIVATE_KEY_IN_PEM_FORMAT\n",
+    "ACTIVE_DOOR_NUMBERS": 1,
+    "INITIAL_DOOR_MAPPING": [[0, 1, 39, 0, 0]],
+    "AMBIENT_PIN": 3
+  }
+}

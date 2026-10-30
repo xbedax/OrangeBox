@@ -39,10 +39,10 @@ static bool isCredentialType(CredType type) {
     return type == CredType::Password || type == CredType::PacketNumber;
 }
 
-static bool validateCredential(const char* value, CredType type) {
+static bool validateCredential(const char* value, CredType type, size_t maxOverride = 0) {
     if (!value || !isCredentialType(type)) return false;
     const size_t minimum = type == CredType::Password ? MIN_PIN_LENGTH : PACKET_NUMBER_MIN;
-    const size_t maximum = type == CredType::Password ? MAX_PIN_LENGTH : PACKET_NUMBER_MAX;
+    const size_t maximum = maxOverride ? maxOverride : (type == CredType::Password ? MAX_PIN_LENGTH : PACKET_NUMBER_MAX);
     const size_t length = strnlen(value, maximum + 1);
     if (length < minimum || length > maximum) return false;
     for (size_t i = 0; i < length; ++i) {
@@ -137,7 +137,11 @@ uint32_t CredStorage::addCred(const CacheRecord& rec) {
     
 uint8_t CredStorage::verifyCred(const char* credEntered, CredType credType) {
     verifiedCredId = 0;
-    if (!validateCredential(credEntered, credType)) return DOOR_UNKNOWN;
+//    char credEnteredSubstr [PACKET_NUMBER_MATCH + 1];
+//    strncpy(credEnteredSubstr, credEntered, PACKET_NUMBER_MATCH);
+//    credEnteredSubstr[(strlen(credEntered) < PACKET_NUMBER_MATCH)? strlen(credEntered)+1 : PACKET_NUMBER_MATCH+1] = '\0';
+    if (!validateCredential(credEntered, credType, credType == CredType::PacketNumber ? PACKET_SCAN_MAX : 0))
+        return DOOR_UNKNOWN;
     time_t now = time(nullptr);
     logger.logPrint(A_CREDENTIAL_VERIFY_STARTED, LOGAREA_OPERATION, SEVERITY_DEBUG, now);
     for (auto& p : credsCache) {
@@ -146,7 +150,7 @@ uint8_t CredStorage::verifyCred(const char* credEntered, CredType credType) {
             continue;
         if (credType == CredType::Password
                 ? strcmp(p.pin, credEntered) != 0
-                : strncmp(p.packetNumber, credEntered, PACKET_NUMBER_MATCH) != 0)
+                : strstr(credEntered, p.packetNumber) == NULL)
             continue;
         if (p.validFrom && now < p.validFrom)
             return DOOR_UNKNOWN;

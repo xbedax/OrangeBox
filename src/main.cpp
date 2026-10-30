@@ -1,5 +1,7 @@
 #include "config.h"
 #include "timeout.h"
+#include "box_config.h"
+#include "provisioning.h"
 #include <Arduino.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -65,6 +67,9 @@
 //uint8_t doorStatePin[] = {3, 4, 5, 6};  // Door state input pins   - smazat
 //uint8_t doorLockPin[] = {0, 1, 2, 3};   // Door lock control pins  - smazat
 
+BoxConfig boxConfig;
+BoxConfigStore boxConfigStore;
+
 const char* fversion = "Bx 0.06";
 
 // WiFi credentials
@@ -78,10 +83,7 @@ const char *password = WIFI_PASSWD;
 //I2C settings
 #define I2C_ADDR 0x42
 
-// NTP settings
-const char* ntpServer = NTP_SERVER;
-const long  gmtOffset_sec = GMT_OFFSET_SEC;  // Adjust according to timezone
-const int   daylightOffset_sec = DAYLIGHT_OFFSET_SEC;
+char logSource[LOG_SOURCE_MAX_LEN + 1] = {};
 
 
 //  Overal state variables
@@ -125,7 +127,7 @@ BoxScanner boxScanner(boxStateMachine);
 HardwareSerial scannerUart(QR_SCANNER_UART_NUM);
 BoxRtc boxRtc;
 //CameraHandler cameraHandler; // Camera handler instance
-DoorMapping initialDoorMappings[] = INITIAL_DOOR_MAPPING;
+
 
 void handleDueActions(uint8_t action, const char* arg);
 void onStateChanged(BoxState oldState, BoxState newState, unsigned long currentMillis);
@@ -250,7 +252,7 @@ void handleGetAmbient(AsyncWebSocketClient *sender, JsonObj data)
 void handleGetStatus(AsyncWebSocketClient *sender, JsonObj data)
 {
   logger.logPrint(A_STATE_READ, LOGAREA_OPERATION, SEVERITY_DEBUG, "status");
-  sendDoorState(sender, 0, gpioHal.readDoorState(0)); // Example: sending status of door 0
+//  sendDoorState(sender, 0, gpioHal.readDoorState(0)); // Example: sending status of door 0
   JsonDocument response;
   if (boxStateMachine.isExternalEnabled()) {
     response[COMM_OPEN_BOX] = MSG_ENABLE;
@@ -350,7 +352,7 @@ void handleSnapshotDiagnostics(AsyncWebSocketClient *sender, JsonObj data)
 {
   (void)data;
   JsonDocument response;
-  bool stored = boxDiagnostics.snapshotStatistics();
+  bool stored = boxDiagnostics.snapshotStatistics(logSource);
   response[MSG_LASTRESULT] = stored ? ResultCode::snapshotStored : ResultCode::snapshotFailed;
   response["count"] = boxDiagnostics.snapshotCount();
   response["html"] = boxDiagnostics.showSnapshots(DiagnosticFormat::Html);
@@ -510,7 +512,7 @@ void registerWebServerRoutes(AsyncWebServer &server) {
   });
 
   server.on("/diagnostics/snapshot", AsyncWebRequestMethod::HTTP_GET, [](AsyncWebServerRequest *request) {
-    boxDiagnostics.snapshotStatistics();
+    boxDiagnostics.snapshotStatistics(logSource);
     request->redirect("/diagnostics");
   });
 
@@ -533,18 +535,18 @@ bool startVpn() {
   refreshVpnLocalHost();
 
   VPNConfig vpnConfig;
-  vpnConfig.sshHost = VPN_GATEWAY_HOST;
-  vpnConfig.sshPort = VPN_GATEWAY_PORT;
-  vpnConfig.username = VPN_USERNAME;
+  vpnConfig.sshHost = boxConfig.vpnHost.c_str();
+  vpnConfig.sshPort = boxConfig.vpnPort;
+  vpnConfig.username = boxConfig.vpnUser.c_str();
   vpnConfig.authMode = VPNAuthMode::PublicKey;
-  vpnConfig.privateKey = VPN_PRIVATE_KEY;
-  vpnConfig.publicKey = VPN_PUBLIC_KEY;
+  vpnConfig.privateKey = boxConfig.vpnPrivateKey.c_str();
+  vpnConfig.publicKey = boxConfig.vpnPublicKey.c_str();
   vpnConfig.keyPassphrase = "";
   vpnConfig.verifyHostKey = true;
-  vpnConfig.hostKeyFingerprint = VPN_GATEWAY_FINGERPRINT;
-  vpnConfig.hostKeyType = VPN_GATEWAY_KEY_TYPE;
+  vpnConfig.hostKeyFingerprint = boxConfig.vpnFingerprint.c_str();
+  vpnConfig.hostKeyType = boxConfig.vpnKeyType.c_str();
   vpnConfig.tunnel.remoteBindHost = "127.0.0.1";
-  vpnConfig.tunnel.remoteBindPort = VPN_REMOTE_BIND_PORT;
+  vpnConfig.tunnel.remoteBindPort = boxConfig.vpnRemotePort;
   vpnConfig.tunnel.localHost = vpnLocalHost;
   vpnConfig.tunnel.localPort = 80;
   vpnConfig.keepAliveIntervalSec = VPN_CLIENT_KEEPALIVE_INTERVAL_SEC;
@@ -561,7 +563,7 @@ bool startVpn() {
     return false;
   }
 
-  logger.logPrint(A_VPN_CONFIGURED, LOGAREA_COMM, SEVERITY_INFO, VPN_REMOTE_BIND_PORT, vpnLocalHost);
+  logger.logPrint(A_VPN_CONFIGURED, LOGAREA_COMM, SEVERITY_INFO, boxConfig.vpnRemotePort, vpnLocalHost);
 
   logger.logPrint(A_VPN_SCHEDULED, LOGAREA_COMM, SEVERITY_INFO);
   return true;
@@ -588,7 +590,17 @@ void setup() {
   webOpenRequests = xQueueCreate(4, sizeof(uint8_t));
   delay(3000); // Small delay to allow any pending operations to complete before starting Serial
   Serial.begin(9600);
-  logger.begin(&webSocketLogTransport);
+  String configError;
+  boxConfigStore.begin();
+  const bool configLoaded = boxConfigStore.load(boxConfig, configError);
+  // Configuration is immutable after this point; the transports retain pointers.
+  reqhostname = boxConfig.hostName.c_str();
+  ssid = boxConfig.wifiSsid.c_str();
+  password = boxConfig.wifiPassword.c_str();
+  snprintf(logSource, sizeof(logSource), "%s", boxConfig.hostName.c_str());
+  webSocketLogTransport.configure(boxConfig.logHost.c_str(), boxConfig.logPort, boxConfig.logPath.c_str());
+  logger.begin(&webSocketLogTransport, logSource);
+  if (!configLoaded) Serial.println("Configuration rejected: " + configError);
   boxDiagnostics.begin();
   logger.logPrint(A_RESTART, LOGAREA_SYSTEM, SEVERITY_CRITICAL);
 
@@ -627,6 +639,12 @@ void setup() {
   }
 
   boxDisplay.displayInit(&gpioHal);
+  boxDisplay.setDisplayLanguage(boxConfig.language);
+  // No lock GPIO, operating state machine, WiFi/VPN or web services before this gate.
+  if (!boxConfig.provisioned) {
+    runProvisioning(boxConfigStore, boxDisplay, boxKeyboard, scannerUart);
+  }
+  boxStateMachine.setScannerTestKeepCred(boxConfig.scannerTestKeepCred);
   logger.logPrint(A_DISPLAY_INITIALIZED, LOGAREA_SYSTEM, SEVERITY_INFO);
 
   logger.logPrint(A_BOX_PROTOTYPE, LOGAREA_SYSTEM, SEVERITY_DEBUG);
@@ -634,7 +652,7 @@ void setup() {
   // Initialize timer manager and GPIO HAL (GPIO HAL needs timer manager for scheduling future tasks, e.g. to turn off the lock after some time)
   timerManager.initializeTimerManager(handleDueActions);
   //GpioHAL::ambientPin = AMBIENT_PIN; // Set the ambient light pin in GpioHAL before initializing it
-  gpioHal.initializeGpioHAL(&timerManager, initialDoorMappings, AMBIENT_PIN, sizeof(initialDoorMappings) / sizeof(initialDoorMappings[0]));
+  gpioHal.initializeGpioHAL(&timerManager, boxConfig.doors, boxConfig.ambientPin, boxConfig.doorCount);
   logger.logPrint(A_HAL_INITIALIZED, LOGAREA_SYSTEM, SEVERITY_INFO);
   // Initializa keyboard (null operation at present)
   boxKeyboard.keyboardInit();
@@ -649,7 +667,6 @@ void setup() {
   }
   boxStateMachine.initialize();
   boxStateMachine.setStateChangeCallback(onStateChanged);
-  boxStateMachine.setUIUpdateCallback(UIcontrolCallback);
   logger.logPrint(A_STATE_MACHINE_INITIALIZED, LOGAREA_SYSTEM, SEVERITY_INFO);
   // Create mutex for thread safety
   imageMutex = xSemaphoreCreateMutex();
@@ -695,7 +712,7 @@ void setup() {
     logger.logPrint(A_WIFI_FAILED, LOGAREA_COMM, SEVERITY_WARNING);
   }
 
-  if (boxRtc.configureNtp(ntpServer, gmtOffset_sec, daylightOffset_sec, RTC_NTP_SYNC_INTERVAL_MS)) {
+  if (boxRtc.configureNtp(boxConfig.ntpServer.c_str(), boxConfig.gmtOffset, boxConfig.daylightOffset, RTC_NTP_SYNC_INTERVAL_MS)) {
     logger.logPrint(A_NTP_SYNCHRONIZATION_SCHEDULED, LOGAREA_SYSTEM, SEVERITY_INFO);
   } else {
     logger.logPrint(A_NTP_SYNCHRONIZATION_NOT_CONFIGURED, LOGAREA_SYSTEM, SEVERITY_WARNING);
@@ -723,6 +740,7 @@ void setup() {
 //Websocket stuff initialization
 
   webSocketManager.initializeWebSocket(&webserver);
+  boxStateMachine.setUIUpdateCallback(UIcontrolCallback);
 
   webSocketManager.registerMessageHandler(COMM_SET_CRED,   handleSetCred);
   webSocketManager.registerMessageHandler(COMM_OPEN_BOX,   handleOpenBox);                  // open door
@@ -746,7 +764,7 @@ void setup() {
   pinMode(doorPin, INPUT);
   */
   logger.logPrint(A_SETUP_COMPLETE, LOGAREA_SYSTEM, SEVERITY_INFO);
-  boxDiagnostics.snapshotStatistics();
+  boxDiagnostics.snapshotStatistics(logSource);
 
 }  //setup
 
